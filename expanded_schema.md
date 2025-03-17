@@ -1,489 +1,293 @@
-# Expanded Database Schema for Comprehensive Property Management System
+# Property Management System - Expanded Database Schema
 
-This schema expands the original HUD-focused application into a comprehensive property management system supporting all 8 core modules.
+This document outlines the expanded database schema for the Property Management System, including the accounting module tables and related tables from other modules.
 
-## PostgreSQL Schema (Structured Data)
+## Core Accounting Module Tables
 
-### Users (Modified)
-```sql
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  phone VARCHAR(20),
-  user_type VARCHAR(20) NOT NULL, -- 'tenant', 'landlord', 'admin', 'housing_authority', 'vendor', 'property_manager'
-  profile_image_url VARCHAR(255),
-  email_verified BOOLEAN DEFAULT FALSE,
-  phone_verified BOOLEAN DEFAULT FALSE,
-  two_factor_enabled BOOLEAN DEFAULT FALSE,
-  last_login TIMESTAMP,
-  status VARCHAR(20) DEFAULT 'active', -- 'active', 'inactive', 'suspended'
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+### 1. recurring_payments
+
+This table stores information about recurring payments such as rent, maintenance fees, etc.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the recurring payment |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this payment is associated with |
+| tenant_id | INTEGER | NOT NULL, REFERENCES tenants(id) | The tenant responsible for this payment |
+| amount | DECIMAL(10,2) | NOT NULL | Payment amount |
+| frequency | VARCHAR(20) | NOT NULL | Payment frequency (monthly, quarterly, annual, one-time) |
+| due_date | DATE | NOT NULL | Date when payment is due |
+| payment_type | VARCHAR(20) | NOT NULL | Type of payment (income, expense) |
+| description | TEXT | | Description of the recurring payment |
+| is_active | BOOLEAN | NOT NULL DEFAULT TRUE | Whether this recurring payment is active |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 2. late_fee_configurations
+
+This table stores configurations for late fee calculations.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the late fee configuration |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this configuration applies to |
+| fee_type | VARCHAR(20) | NOT NULL | Type of fee (percentage, fixed) |
+| fee_value | DECIMAL(10,2) | NOT NULL | Fee amount or percentage |
+| grace_period_days | INTEGER | NOT NULL DEFAULT 0 | Number of days after due date before late fee applies |
+| minimum_fee | DECIMAL(10,2) | | Minimum fee amount (for percentage-based fees) |
+| maximum_fee | DECIMAL(10,2) | | Maximum fee amount (for percentage-based fees) |
+| is_active | BOOLEAN | NOT NULL DEFAULT TRUE | Whether this configuration is active |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 3. late_fees
+
+This table stores instances of late fees applied to payments.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the late fee |
+| recurring_payment_id | INTEGER | NOT NULL, REFERENCES recurring_payments(id) | The payment this late fee is associated with |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this late fee is associated with |
+| tenant_id | INTEGER | NOT NULL, REFERENCES tenants(id) | The tenant this late fee is associated with |
+| amount | DECIMAL(10,2) | NOT NULL | Late fee amount |
+| description | TEXT | | Description of the late fee |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'pending' | Status of the late fee (pending, paid, waived) |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 4. trust_accounts
+
+This table stores trust account information (security deposits, escrow, etc.).
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the trust account |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this trust account is associated with |
+| name | VARCHAR(100) | NOT NULL | Name of the trust account |
+| description | TEXT | | Description of the trust account |
+| balance | DECIMAL(10,2) | NOT NULL DEFAULT 0 | Current balance of the trust account |
+| account_type | VARCHAR(50) | NOT NULL | Type of trust account (escrow, reserve, etc.) |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 5. trust_account_transactions
+
+This table stores transactions for trust accounts.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the transaction |
+| trust_account_id | INTEGER | NOT NULL, REFERENCES trust_accounts(id) | The trust account this transaction belongs to |
+| amount | DECIMAL(10,2) | NOT NULL | Transaction amount |
+| transaction_type | VARCHAR(20) | NOT NULL | Type of transaction (deposit, withdrawal) |
+| category | VARCHAR(50) | | Category of the transaction |
+| description | TEXT | | Description of the transaction |
+| reference_id | VARCHAR(100) | | External reference ID |
+| transaction_date | DATE | NOT NULL | Date of the transaction |
+| related_account_id | INTEGER | REFERENCES trust_accounts(id) | Related trust account for transfers |
+| balance_after | DECIMAL(10,2) | NOT NULL | Account balance after this transaction |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 6. expenses
+
+This table stores expense information.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the expense |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this expense is associated with |
+| amount | DECIMAL(10,2) | NOT NULL | Expense amount |
+| category | VARCHAR(50) | NOT NULL | Category of the expense |
+| vendor | VARCHAR(100) | | Vendor or payee |
+| description | TEXT | | Description of the expense |
+| transaction_date | DATE | NOT NULL | Date of the expense |
+| payment_method | VARCHAR(50) | | Method of payment |
+| reference_number | VARCHAR(100) | | Reference number (check number, etc.) |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 7. receipt_images
+
+This table stores receipt images for expense tracking.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the receipt image |
+| expense_id | INTEGER | REFERENCES expenses(id) | The expense this receipt is associated with |
+| file_path | VARCHAR(255) | NOT NULL | Path to the stored image file |
+| file_name | VARCHAR(255) | NOT NULL | Original filename |
+| file_type | VARCHAR(50) | NOT NULL | File MIME type |
+| file_size | INTEGER | NOT NULL | File size in bytes |
+| upload_date | TIMESTAMP | NOT NULL DEFAULT NOW() | When this file was uploaded |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 8. payments
+
+This table stores payment records.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the payment |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this payment is associated with |
+| tenant_id | INTEGER | NOT NULL, REFERENCES tenants(id) | The tenant making this payment |
+| recurring_payment_id | INTEGER | REFERENCES recurring_payments(id) | Associated recurring payment if applicable |
+| amount | DECIMAL(10,2) | NOT NULL | Payment amount |
+| payment_date | DATE | NOT NULL | Date of the payment |
+| payment_method | VARCHAR(50) | NOT NULL | Method of payment |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'completed' | Status of the payment |
+| notes | TEXT | | Additional notes |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+## Related Module Tables
+
+### 9. properties
+
+This table stores property information.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the property |
+| name | VARCHAR(100) | NOT NULL | Property name |
+| address | VARCHAR(255) | NOT NULL | Property address |
+| city | VARCHAR(100) | NOT NULL | City |
+| state | VARCHAR(50) | NOT NULL | State or province |
+| zip_code | VARCHAR(20) | NOT NULL | ZIP or postal code |
+| property_type | VARCHAR(50) | NOT NULL | Type of property |
+| units | INTEGER | NOT NULL DEFAULT 1 | Number of units |
+| owner_id | INTEGER | REFERENCES users(id) | Property owner |
+| manager_id | INTEGER | REFERENCES users(id) | Property manager |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'active' | Property status |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 10. tenants
+
+This table stores tenant information.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the tenant |
+| user_id | INTEGER | REFERENCES users(id) | Associated user account |
+| first_name | VARCHAR(50) | NOT NULL | First name |
+| last_name | VARCHAR(50) | NOT NULL | Last name |
+| email | VARCHAR(100) | NOT NULL | Email address |
+| phone | VARCHAR(20) | | Phone number |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'active' | Tenant status |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 11. leases
+
+This table stores lease information.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the lease |
+| property_id | INTEGER | NOT NULL, REFERENCES properties(id) | The property this lease is for |
+| unit_id | INTEGER | REFERENCES units(id) | The specific unit if applicable |
+| tenant_id | INTEGER | NOT NULL, REFERENCES tenants(id) | The tenant on the lease |
+| start_date | DATE | NOT NULL | Lease start date |
+| end_date | DATE | NOT NULL | Lease end date |
+| rent_amount | DECIMAL(10,2) | NOT NULL | Monthly rent amount |
+| security_deposit | DECIMAL(10,2) | NOT NULL | Security deposit amount |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'active' | Lease status |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+### 12. users
+
+This table stores user account information.
+
+| Column Name | Data Type | Constraints | Description |
+|-------------|-----------|-------------|-------------|
+| id | SERIAL | PRIMARY KEY | Unique identifier for the user |
+| username | VARCHAR(50) | NOT NULL UNIQUE | Username |
+| email | VARCHAR(100) | NOT NULL UNIQUE | Email address |
+| password_hash | VARCHAR(255) | NOT NULL | Hashed password |
+| role | VARCHAR(20) | NOT NULL | User role (admin, manager, tenant, owner) |
+| status | VARCHAR(20) | NOT NULL DEFAULT 'active' | Account status |
+| last_login | TIMESTAMP | | Last login timestamp |
+| created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | When this record was created |
+| updated_at | TIMESTAMP | | When this record was last updated |
+
+## Relationships
+
+The following diagram illustrates the key relationships between tables:
+
+```
+properties ─┬─ recurring_payments ─── late_fees
+            │
+            ├─ trust_accounts ─── trust_account_transactions
+            │
+            ├─ expenses ─── receipt_images
+            │
+            ├─ leases
+            │
+            └─ units
+
+tenants ────┬─ recurring_payments
+            │
+            ├─ payments
+            │
+            ├─ late_fees
+            │
+            └─ leases
+
+users ─────┬─ tenants
+           │
+           └─ properties (as owner or manager)
 ```
 
-### Subscription Plans (New)
+## Indexes
+
+In addition to the indexes mentioned in the current schema, the following indexes are recommended for the expanded schema:
+
 ```sql
-CREATE TABLE subscription_plans (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(50) NOT NULL, -- 'Free', 'Standard', 'Enterprise'
-  description TEXT,
-  monthly_base_price DECIMAL(10,2) NOT NULL,
-  annual_base_price DECIMAL(10,2),
-  unit_price DECIMAL(10,2), -- Price per unit
-  min_monthly_price DECIMAL(10,2), -- Minimum monthly charge
-  max_units INTEGER, -- Maximum number of units (NULL for unlimited)
-  features JSONB, -- JSON array of included features
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- For trust_accounts
+CREATE INDEX idx_trust_accounts_property_id ON trust_accounts(property_id);
+
+-- For expenses
+CREATE INDEX idx_expenses_property_id ON expenses(property_id);
+CREATE INDEX idx_expenses_transaction_date ON expenses(transaction_date);
+CREATE INDEX idx_expenses_category ON expenses(category);
+
+-- For payments
+CREATE INDEX idx_payments_property_id ON payments(property_id);
+CREATE INDEX idx_payments_tenant_id ON payments(tenant_id);
+CREATE INDEX idx_payments_recurring_payment_id ON payments(recurring_payment_id);
+CREATE INDEX idx_payments_payment_date ON payments(payment_date);
+
+-- For properties
+CREATE INDEX idx_properties_owner_id ON properties(owner_id);
+CREATE INDEX idx_properties_manager_id ON properties(manager_id);
+
+-- For tenants
+CREATE INDEX idx_tenants_user_id ON tenants(user_id);
+
+-- For leases
+CREATE INDEX idx_leases_property_id ON leases(property_id);
+CREATE INDEX idx_leases_tenant_id ON leases(tenant_id);
+CREATE INDEX idx_leases_start_date ON leases(start_date);
+CREATE INDEX idx_leases_end_date ON leases(end_date);
 ```
 
-### Subscriptions (New)
-```sql
-CREATE TABLE subscriptions (
-  id SERIAL PRIMARY KEY,
-  landlord_id INTEGER REFERENCES landlords(id),
-  plan_id INTEGER REFERENCES subscription_plans(id),
-  start_date DATE NOT NULL,
-  end_date DATE,
-  billing_cycle VARCHAR(20) NOT NULL, -- 'monthly', 'annual'
-  status VARCHAR(20) NOT NULL, -- 'active', 'canceled', 'past_due', 'trial'
-  trial_end_date DATE,
-  current_units INTEGER NOT NULL DEFAULT 0,
-  current_price DECIMAL(10,2) NOT NULL,
-  auto_renew BOOLEAN DEFAULT TRUE,
-  payment_method_id INTEGER,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+## Future Expansion
 
-### Billing (New)
-```sql
-CREATE TABLE billing (
-  id SERIAL PRIMARY KEY,
-  subscription_id INTEGER REFERENCES subscriptions(id),
-  landlord_id INTEGER REFERENCES landlords(id),
-  amount DECIMAL(10,2) NOT NULL,
-  billing_date DATE NOT NULL,
-  due_date DATE NOT NULL,
-  status VARCHAR(20) NOT NULL, -- 'pending', 'paid', 'past_due', 'canceled'
-  payment_date DATE,
-  payment_method VARCHAR(50),
-  invoice_number VARCHAR(50) UNIQUE,
-  invoice_url VARCHAR(255),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+The schema is designed to be extensible for future features:
 
-### Payment Methods (New)
-```sql
-CREATE TABLE payment_methods (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  payment_type VARCHAR(20) NOT NULL, -- 'credit_card', 'bank_account', 'paypal'
-  provider VARCHAR(50) NOT NULL, -- 'stripe', 'paypal', etc.
-  account_number VARCHAR(255), -- Encrypted or last 4 digits
-  expiration_date DATE,
-  is_default BOOLEAN DEFAULT FALSE,
-  status VARCHAR(20) DEFAULT 'active',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+1. **Maintenance Management**: Add tables for maintenance requests, work orders, and vendor management.
+2. **Document Storage**: Expand receipt_images concept to store lease documents, inspection reports, etc.
+3. **Reporting**: Add views or materialized views for common reports.
+4. **AI Integration**: Add tables for storing prediction data, training data, and model parameters.
+5. **Communication**: Add tables for messages, notifications, and communication logs.
 
-### Landlords (Modified)
-```sql
-CREATE TABLE landlords (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  company_name VARCHAR(255),
-  tax_id VARCHAR(20),
-  accepts_section8 BOOLEAN DEFAULT FALSE,
-  business_address_line1 VARCHAR(255),
-  business_address_line2 VARCHAR(255),
-  business_city VARCHAR(100),
-  business_state VARCHAR(2),
-  business_zip VARCHAR(10),
-  business_phone VARCHAR(20),
-  business_email VARCHAR(255),
-  website VARCHAR(255),
-  logo_url VARCHAR(255),
-  subscription_id INTEGER REFERENCES subscriptions(id),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+## Notes
 
-### Properties (Modified)
-```sql
-CREATE TABLE properties (
-  id SERIAL PRIMARY KEY,
-  landlord_id INTEGER REFERENCES landlords(id),
-  property_name VARCHAR(255),
-  address_line1 VARCHAR(255) NOT NULL,
-  address_line2 VARCHAR(255),
-  city VARCHAR(100) NOT NULL,
-  state VARCHAR(2) NOT NULL,
-  zip VARCHAR(10) NOT NULL,
-  property_type VARCHAR(50) NOT NULL, -- 'apartment', 'house', 'duplex', etc.
-  year_built INTEGER,
-  total_units INTEGER DEFAULT 1,
-  total_floors INTEGER,
-  total_square_feet INTEGER,
-  amenities JSONB, -- JSON array of amenities
-  parking_spaces INTEGER,
-  has_pool BOOLEAN DEFAULT FALSE,
-  has_gym BOOLEAN DEFAULT FALSE,
-  has_laundry BOOLEAN DEFAULT FALSE,
-  has_security BOOLEAN DEFAULT FALSE,
-  latitude DECIMAL(10,8),
-  longitude DECIMAL(11,8),
-  status VARCHAR(20) DEFAULT 'active', -- 'active', 'inactive', 'under_maintenance'
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Units (Modified)
-```sql
-CREATE TABLE units (
-  id SERIAL PRIMARY KEY,
-  property_id INTEGER REFERENCES properties(id),
-  unit_number VARCHAR(20),
-  floor_number INTEGER,
-  bedrooms INTEGER NOT NULL,
-  bathrooms DECIMAL(3,1) NOT NULL,
-  square_feet INTEGER,
-  monthly_rent DECIMAL(10,2) NOT NULL,
-  deposit_amount DECIMAL(10,2),
-  is_furnished BOOLEAN DEFAULT FALSE,
-  has_washer_dryer BOOLEAN DEFAULT FALSE,
-  has_balcony BOOLEAN DEFAULT FALSE,
-  has_dishwasher BOOLEAN DEFAULT FALSE,
-  utilities_included JSONB, -- JSON array of included utilities
-  status VARCHAR(20) NOT NULL DEFAULT 'available', -- 'available', 'occupied', 'maintenance', 'reserved'
-  available_from DATE,
-  listing_title VARCHAR(255),
-  listing_description TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Tenants (Modified)
-```sql
-CREATE TABLE tenants (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
-  household_size INTEGER,
-  annual_income DECIMAL(12,2),
-  has_section8_voucher BOOLEAN DEFAULT FALSE,
-  voucher_amount DECIMAL(12,2),
-  housing_authority_id INTEGER REFERENCES housing_authorities(id),
-  employment_status VARCHAR(50),
-  employer_name VARCHAR(255),
-  employer_phone VARCHAR(20),
-  emergency_contact_name VARCHAR(255),
-  emergency_contact_phone VARCHAR(20),
-  emergency_contact_relationship VARCHAR(100),
-  credit_score INTEGER,
-  background_check_status VARCHAR(20),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Leases (Modified)
-```sql
-CREATE TABLE leases (
-  id SERIAL PRIMARY KEY,
-  tenant_id INTEGER REFERENCES tenants(id),
-  unit_id INTEGER REFERENCES units(id),
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  monthly_rent DECIMAL(10,2) NOT NULL,
-  security_deposit DECIMAL(10,2) NOT NULL,
-  lease_type VARCHAR(50) NOT NULL, -- 'fixed', 'month-to-month', 'week-to-week'
-  status VARCHAR(20) NOT NULL, -- 'active', 'expired', 'terminated', 'renewal_offered'
-  rent_due_day INTEGER NOT NULL DEFAULT 1,
-  late_fee_amount DECIMAL(10,2),
-  late_fee_days INTEGER, -- Days after due date when late fee applies
-  is_cosigned BOOLEAN DEFAULT FALSE,
-  cosigner_id INTEGER REFERENCES users(id),
-  renewal_offered_date DATE,
-  renewal_deadline_date DATE,
-  move_out_date DATE,
-  move_out_inspection_date DATE,
-  special_terms TEXT,
-  document_url VARCHAR(255),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Payments (Modified)
-```sql
-CREATE TABLE payments (
-  id SERIAL PRIMARY KEY,
-  lease_id INTEGER REFERENCES leases(id),
-  tenant_id INTEGER REFERENCES tenants(id),
-  amount DECIMAL(10,2) NOT NULL,
-  payment_date DATE NOT NULL,
-  payment_type VARCHAR(20) NOT NULL, -- 'rent', 'security_deposit', 'late_fee', 'utility', 'maintenance'
-  payment_method VARCHAR(20) NOT NULL, -- 'check', 'cash', 'online', 'bank_transfer', 'credit_card'
-  transaction_id VARCHAR(255),
-  payment_status VARCHAR(20) DEFAULT 'completed', -- 'pending', 'completed', 'failed', 'refunded'
-  reference_number VARCHAR(100),
-  memo TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Maintenance Requests (New)
-```sql
-CREATE TABLE maintenance_requests (
-  id SERIAL PRIMARY KEY,
-  tenant_id INTEGER REFERENCES tenants(id),
-  unit_id INTEGER REFERENCES units(id),
-  category VARCHAR(50) NOT NULL, -- 'plumbing', 'electrical', 'appliance', etc.
-  title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
-  priority VARCHAR(20) NOT NULL, -- 'emergency', 'urgent', 'normal', 'low'
-  status VARCHAR(20) NOT NULL DEFAULT 'open', -- 'open', 'assigned', 'in_progress', 'completed', 'canceled'
-  permission_to_enter BOOLEAN DEFAULT FALSE,
-  preferred_entry_date DATE,
-  preferred_entry_time_range VARCHAR(50),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP,
-  tenant_satisfaction INTEGER -- 1-5 rating
-);
-```
-
-### Work Orders (New)
-```sql
-CREATE TABLE work_orders (
-  id SERIAL PRIMARY KEY,
-  maintenance_request_id INTEGER REFERENCES maintenance_requests(id),
-  vendor_id INTEGER REFERENCES vendors(id),
-  assigned_by INTEGER REFERENCES users(id),
-  title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
-  estimated_cost DECIMAL(10,2),
-  actual_cost DECIMAL(10,2),
-  scheduled_date DATE,
-  scheduled_time_range VARCHAR(50),
-  status VARCHAR(20) NOT NULL DEFAULT 'assigned', -- 'assigned', 'in_progress', 'completed', 'canceled'
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP
-);
-```
-
-### Vendors (New)
-```sql
-CREATE TABLE vendors (
-  id SERIAL PRIMARY KEY,
-  company_name VARCHAR(255) NOT NULL,
-  contact_name VARCHAR(255),
-  email VARCHAR(255),
-  phone VARCHAR(20),
-  address_line1 VARCHAR(255),
-  address_line2 VARCHAR(255),
-  city VARCHAR(100),
-  state VARCHAR(2),
-  zip VARCHAR(10),
-  service_category VARCHAR(50) NOT NULL, -- 'plumbing', 'electrical', 'cleaning', etc.
-  hourly_rate DECIMAL(10,2),
-  is_preferred BOOLEAN DEFAULT FALSE,
-  insurance_info TEXT,
-  license_number VARCHAR(100),
-  tax_id VARCHAR(20),
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Inventory (New)
-```sql
-CREATE TABLE inventory (
-  id SERIAL PRIMARY KEY,
-  property_id INTEGER REFERENCES properties(id),
-  item_name VARCHAR(255) NOT NULL,
-  category VARCHAR(50) NOT NULL, -- 'appliance', 'tool', 'supply', etc.
-  quantity INTEGER NOT NULL DEFAULT 1,
-  unit_cost DECIMAL(10,2),
-  total_cost DECIMAL(10,2),
-  purchase_date DATE,
-  supplier VARCHAR(255),
-  model_number VARCHAR(100),
-  serial_number VARCHAR(100),
-  warranty_expiration DATE,
-  location VARCHAR(255), -- Where the item is stored
-  status VARCHAR(20) DEFAULT 'available', -- 'available', 'in_use', 'maintenance', 'depleted'
-  minimum_quantity INTEGER DEFAULT 1, -- For reorder alerts
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Inspections (New)
-```sql
-CREATE TABLE inspections (
-  id SERIAL PRIMARY KEY,
-  unit_id INTEGER REFERENCES units(id),
-  inspector_id INTEGER REFERENCES users(id),
-  inspection_type VARCHAR(50) NOT NULL, -- 'move_in', 'move_out', 'routine', 'hqs'
-  scheduled_date DATE NOT NULL,
-  scheduled_time_range VARCHAR(50),
-  status VARCHAR(20) NOT NULL DEFAULT 'scheduled', -- 'scheduled', 'completed', 'canceled', 'failed'
-  notes TEXT,
-  passed BOOLEAN,
-  reinspection_needed BOOLEAN DEFAULT FALSE,
-  reinspection_date DATE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP
-);
-```
-
-### Inspection Items (New)
-```sql
-CREATE TABLE inspection_items (
-  id SERIAL PRIMARY KEY,
-  inspection_id INTEGER REFERENCES inspections(id),
-  category VARCHAR(50) NOT NULL, -- 'kitchen', 'bathroom', 'bedroom', etc.
-  item_name VARCHAR(255) NOT NULL,
-  condition VARCHAR(20) NOT NULL, -- 'excellent', 'good', 'fair', 'poor'
-  notes TEXT,
-  photo_urls JSONB, -- JSON array of photo URLs
-  requires_attention BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Marketing Listings (New)
-```sql
-CREATE TABLE marketing_listings (
-  id SERIAL PRIMARY KEY,
-  unit_id INTEGER REFERENCES units(id),
-  title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
-  monthly_rent DECIMAL(10,2) NOT NULL,
-  security_deposit DECIMAL(10,2),
-  lease_terms TEXT,
-  available_from DATE,
-  featured BOOLEAN DEFAULT FALSE,
-  status VARCHAR(20) NOT NULL DEFAULT 'active', -- 'active', 'pending', 'rented', 'inactive'
-  external_listing_urls JSONB, -- JSON object with URLs to external listing sites
-  virtual_tour_url VARCHAR(255),
-  application_fee DECIMAL(10,2),
-  pet_policy TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Listing Photos (New)
-```sql
-CREATE TABLE listing_photos (
-  id SERIAL PRIMARY KEY,
-  listing_id INTEGER REFERENCES marketing_listings(id),
-  photo_url VARCHAR(255) NOT NULL,
-  caption VARCHAR(255),
-  is_primary BOOLEAN DEFAULT FALSE,
-  display_order INTEGER,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Leads (New)
-```sql
-CREATE TABLE leads (
-  id SERIAL PRIMARY KEY,
-  listing_id INTEGER REFERENCES marketing_listings(id),
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  email VARCHAR(255) NOT NULL,
-  phone VARCHAR(20),
-  contact_preference VARCHAR(20) DEFAULT 'email', -- 'email', 'phone', 'text'
-  status VARCHAR(20) NOT NULL DEFAULT 'new', -- 'new', 'contacted', 'showing_scheduled', 'application_sent', 'converted', 'lost'
-  source VARCHAR(50), -- 'website', 'zillow', 'referral', etc.
-  notes TEXT,
-  desired_move_in_date DATE,
-  budget_min DECIMAL(10,2),
-  budget_max DECIMAL(10,2),
-  bedrooms_desired INTEGER,
-  bathrooms_desired DECIMAL(3,1),
-  pets BOOLEAN,
-  pet_details TEXT,
-  assigned_to INTEGER REFERENCES users(id),
-  lead_score INTEGER, -- AI-calculated score 1-100
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_contacted_at TIMESTAMP
-);
-```
-
-### Lead Activities (New)
-```sql
-CREATE TABLE lead_activities (
-  id SERIAL PRIMARY KEY,
-  lead_id INTEGER REFERENCES leads(id),
-  user_id INTEGER REFERENCES users(id),
-  activity_type VARCHAR(50) NOT NULL, -- 'email', 'call', 'showing', 'application', 'note'
-  description TEXT,
-  scheduled_at TIMESTAMP,
-  completed_at TIMESTAMP,
-  outcome VARCHAR(50), -- 'successful', 'no_answer', 'rescheduled', etc.
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Financial Accounts (New)
-```sql
-CREATE TABLE financial_accounts (
-  id SERIAL PRIMARY KEY,
-  landlord_id INTEGER REFERENCES landlords(id),
-  account_name VARCHAR(255) NOT NULL,
-  account_type VARCHAR(50) NOT NULL, -- 'operating', 'security_deposit', 'reserve', 'tax'
-  account_number VARCHAR(255),
-  bank_name VARCHAR(255),
-  routing_number VARCHAR(50),
-  current_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
-  is_default BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### Financial Transactions (New)
-```sql
-CREATE TABLE financial_transactions (
-  id SERIAL PRIMARY KEY,
-  account_id INTEGER REFERENCES financial_accounts(id),
-  property_id INTEGER REFERENCES properties(id),
-  unit_id INTEGER REFERENCES units(id),
-  category VARCHAR(50) NOT NULL, -- 'rent', 'deposit', 'maintenance', 'utility', 'tax', 'insurance', etc.
-  subcategory VARCHAR(50),
-  amount DECIMAL(12,2) NOT NULL,
-  transaction_type VARCHAR(10) NOT NULL, -- 'income', 'expense'
-  transaction_date DATE NOT NULL,
-  description TEXT,
-  payment_method VARCHAR(50),
-  reference_number VAR<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
+1. All monetary values are stored as DECIMAL(10,2) to ensure precision in financial calculations.
+2. Timestamps are used to track record creation and updates.
+3. Foreign key constraints maintain referential integrity.
+4. Status fields use enumerated types for consistency.
+5. Soft deletion is implemented through status fields rather than actual deletion.

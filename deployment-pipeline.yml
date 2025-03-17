@@ -1,0 +1,180 @@
+name: Property Management System CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, staging, development ]
+  pull_request:
+    branches: [ main, staging ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: property_management_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install server dependencies
+      run: |
+        cd server
+        npm ci
+    
+    - name: Run server linting
+      run: |
+        cd server
+        npm run lint
+    
+    - name: Run server tests
+      run: |
+        cd server
+        npm test
+      env:
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: property_management_test
+        NODE_ENV: test
+    
+    - name: Install client dependencies
+      run: |
+        cd client/web
+        npm ci
+    
+    - name: Run client linting
+      run: |
+        cd client/web
+        npm run lint
+    
+    - name: Run client tests
+      run: |
+        cd client/web
+        npm test
+    
+    - name: Build client
+      run: |
+        cd client/web
+        npm run build
+  
+  deploy-development:
+    needs: test
+    if: github.ref == 'refs/heads/development'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to development server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.DEV_HOST }}
+        username: ${{ secrets.DEV_USERNAME }}
+        key: ${{ secrets.DEV_SSH_KEY }}
+        script: |
+          cd /var/www/property-management-dev
+          git pull
+          cd server
+          npm ci
+          npm run migrate
+          pm2 restart property-management-api-dev
+          cd ../client/web
+          npm ci
+          npm run build
+          cp -r build/* /var/www/property-management-dev/client/
+  
+  deploy-staging:
+    needs: test
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to staging server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USERNAME }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        script: |
+          cd /var/www/property-management-staging
+          git pull
+          cd server
+          npm ci
+          NODE_ENV=staging npm run migrate
+          pm2 restart property-management-api-staging
+          cd ../client/web
+          npm ci
+          npm run build
+          cp -r build/* /var/www/property-management-staging/client/
+  
+  deploy-production:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USERNAME }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        script: |
+          # Create backup before deployment
+          cd /var/www/property-management-production
+          timestamp=$(date +"%Y%m%d_%H%M%S")
+          mkdir -p /var/backups/property-management
+          pg_dump -U ${{ secrets.DB_USER }} property_management_production | gzip > /var/backups/property-management/pre_deploy_backup_$timestamp.sql.gz
+          
+          # Deploy new code
+          git pull
+          cd server
+          npm ci --production
+          NODE_ENV=production npm run migrate
+          pm2 restart property-management-api-prod
+          
+          # Build and deploy client
+          cd ../client/web
+          npm ci --production
+          npm run build
+          cp -r build/* /var/www/property-management-production/client/
+          
+          # Verify deployment
+          curl -s -o /dev/null -w "%{http_code}" https://app.example.com/api/health
+
+  notify:
+    needs: [deploy-development, deploy-staging, deploy-production]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send deployment notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: deployments
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_TITLE: Deployment Status
+          SLACK_MESSAGE: 'Property Management System deployment to ${{ github.ref }} - ${{ job.status }}'

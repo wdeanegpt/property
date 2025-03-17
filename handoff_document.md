@@ -1,1029 +1,389 @@
-# Comprehensive Property Management System - Handoff Document
-
-## Introduction
-
-This handoff document provides a comprehensive overview of the Comprehensive Property Management System, its current status, and next steps for implementation. It serves as the central reference for the project, ensuring continuity and knowledge transfer between development teams.
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Current Status](#current-status)
-3. [System Architecture](#system-architecture)
-4. [Database Schema](#database-schema)
-5. [Implementation Timeline](#implementation-timeline)
-6. [Module Specifications](#module-specifications)
-7. [Code Organization](#code-organization)
-8. [Development Environment Setup](#development-environment-setup)
-9. [Next Implementation Steps](#next-implementation-steps)
-10. [Resources and References](#resources-and-references)
+# Property Management System - Handoff Document
 
 ## Project Overview
 
-The Comprehensive Property Management System is a full-featured application that evolved from an affordable housing application focused on HUD programs into a comprehensive platform with AI-enhanced features. The system serves tenants, landlords, property managers, and housing authorities across all 50 U.S. states with a robust set of features organized into eight core modules.
+The Property Management System is a comprehensive web-based application designed to help property managers and landlords efficiently manage their properties across all 50 U.S. states. The system includes AI-enhanced capabilities for automation and prediction, serving various stakeholders including property managers, landlords, tenants, and regulatory agencies.
 
-### Core Modules
-
-1. **Tenant Management**: Handles tenant applications, screening, lease management, communication, and tenant portal access.
-2. **Property Management**: Manages property listings, unit details, amenities, and compliance with housing regulations.
-3. **Financial Management**: Tracks rent collection, expenses, accounting, and financial reporting.
-4. **Maintenance Management**: Coordinates maintenance requests, work orders, vendor management, and preventive maintenance.
-5. **Communication Hub**: Facilitates communication between tenants, landlords, property managers, and housing authorities.
-6. **Reporting and Analytics**: Provides insights into property performance, tenant behavior, and financial health.
-7. **Pricing and Accessibility**: Implements tiered subscription plans with feature-based access control.
-8. **Integration and API**: Connects with external services and provides API access for custom integrations.
-
-### Key Features
-
-- **AI-Enhanced Capabilities**: Form filling automation, pricing recommendations, cash flow prediction, tenant turnover prediction, and predictive maintenance.
-- **HUD Integration**: Direct connection with HUD systems across all 50 states, automating form submissions and ensuring compliance.
-- **Tiered Pricing Model**: Free tier (up to 5 units), Standard tier ($2/unit/month), and Enterprise tier (custom pricing).
-- **Multi-Platform Support**: Web application, mobile application (iOS/Android), and progressive web app.
-- **Comprehensive Reporting**: Financial reports, property performance metrics, and compliance documentation.
-
-## Current Status
-
-- **Web Application**: Deployed at https://xgfxgabn.manus.space/
-- **Current Step**: 022 - Preparing handoff for next implementation steps
-- **Next Step**: 023 - Implementing advanced accounting module
-- **Previous Milestone**: Successfully implemented pricing and accessibility module with tiered subscription plans
-
-### Completed Work
-
-#### Database Schema Expansion
-- Expanded PostgreSQL schema to support all eight core modules
-- Implemented MongoDB collections for unstructured data and AI functionality
-- Set up Redis caching structures for performance optimization
-- Created test scripts to validate all database components
-
-#### Pricing and Accessibility Module
-- Implemented Free Tier (up to 5 units)
-- Implemented Standard Tier ($2/unit/month, min $10/month)
-- Implemented Enterprise Tier (custom pricing, $500+/month base)
-- Developed AI-driven pricing recommendations
-- Integrated the pricing module with the expanded database
-- Thoroughly tested all components
-
-#### Bug Fixes
-- Fixed city selection functionality on tenant onboarding location page
-  - Issue: City dropdown wasn't being populated when a state was selected
-  - Solution: Implemented JavaScript to populate cities based on selected state
+This handoff document provides essential information for developers, administrators, and stakeholders who will be working with the system.
 
 ## System Architecture
 
-The Comprehensive Property Management System employs a modern, scalable architecture designed to support the needs of property managers, landlords, tenants, and housing authorities.
+The Property Management System follows a modern client-server architecture:
 
-### Architecture Overview
+### Frontend
+- **Technology**: React.js with Material UI
+- **Structure**: Component-based architecture with modular dashboards
+- **State Management**: Context API and hooks for state management
+- **Routing**: React Router for navigation
+- **Data Visualization**: Recharts library for charts and graphs
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Client Applications                            │
-│                                                                         │
-│  ┌───────────────┐    ┌───────────────┐    ┌───────────────────────┐    │
-│  │  Web App      │    │  Mobile App   │    │  Admin Dashboard      │    │
-│  │  (React.js)   │    │  (React Native)│    │  (React.js)          │    │
-│  └───────┬───────┘    └───────┬───────┘    └───────────┬───────────┘    │
-└──────────┼─────────────────────┼───────────────────────┼────────────────┘
-           │                     │                       │
-           │                     │                       │
-           ▼                     ▼                       ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              API Gateway                                 │
-│                         (Node.js/Express.js)                            │
-└─────────────┬─────────────────────┬────────────────────┬────────────────┘
-              │                     │                    │
-    ┌─────────┼─────────┐ ┌─────────┼─────────┐ ┌────────┼─────────────┐
-    │         │         │ │         │         │ │        │             │
-    ▼         ▼         ▼ ▼         ▼         ▼ ▼        ▼             ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│ Auth     │ │ Property │ │ Tenant   │ │ Financial│ │ Maint.   │ │ Pricing  │
-│ Service  │ │ Service  │ │ Service  │ │ Service  │ │ Service  │ │ Service  │
-└────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘
-     │            │            │            │            │            │
-     │            │            │            │            │            │
-┌────┴────────────┴────────────┴────────────┴────────────┴────────────┴─────┐
-│                          Message Queue (Redis)                            │
-└────┬────────────┬────────────┬────────────┬────────────┬────────────┬─────┘
-     │            │            │            │            │            │
-     │            │            │            │            │            │
-┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐ ┌────┴─────┐
-│ Database │ │ Document │ │ Search   │ │ Cache    │ │ AI/ML    │ │ External │
-│ Layer    │ │ Storage  │ │ Engine   │ │ Layer    │ │ Services │ │ Services │
-└──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
-     │            │            │            │            │            │
-     ▼            ▼            ▼            ▼            ▼            ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│PostgreSQL│ │ MongoDB  │ │Elasticsearch│ Redis    │ │TensorFlow│ │ HUD API  │
-│          │ │          │ │          │ │          │ │ Flask    │ │ Stripe   │
-│          │ │          │ │          │ │          │ │          │ │ Plaid    │
-└──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
-```
+### Backend
+- **Technology**: Node.js with Express.js
+- **API Design**: RESTful API with versioning
+- **Authentication**: JWT-based authentication
+- **Database**: PostgreSQL for relational data storage
+- **ORM**: Knex.js for database queries and migrations
 
-### Key Components
+### AI Components
+- **Prediction Models**: TensorFlow.js for cash flow prediction
+- **Error Detection**: Custom anomaly detection algorithms
+- **Data Processing**: Python scripts for data preprocessing
 
-- **Frontend**: React.js (web) + React Native (mobile)
-- **Backend**: Node.js with Express.js for RESTful API
-- **Database**: 
-  - PostgreSQL (structured data)
-  - MongoDB (unstructured data)
-  - Redis (caching)
-- **AI/ML**: Python with TensorFlow and Flask microservice
-- **Cloud**: AWS for hosting and infrastructure
-- **Authentication**: JWT for secure sessions
-- **Integrations**: Stripe, Plaid, Google Maps, Zapier
+## Core Modules
 
-## Database Schema
+The system is organized into eight core modules:
 
-The Comprehensive Property Management System utilizes a multi-database approach to efficiently handle different types of data and optimize performance:
+1. **Property Management**: For managing property details, units, and amenities
+2. **Tenant Management**: For managing tenant information, leases, and communications
+3. **Maintenance Management**: For tracking maintenance requests and scheduling repairs
+4. **Document Management**: For storing and managing legal documents and forms
+5. **Accounting**: For tracking rent, expenses, and financial reporting
+6. **Compliance**: For ensuring regulatory compliance across different jurisdictions
+7. **Reporting**: For generating customized reports and analytics
+8. **Administration**: For system settings, user management, and access control
 
-1. **PostgreSQL** for structured relational data
-2. **MongoDB** for unstructured data and document storage
-3. **Redis** for caching and performance optimization
+This handoff document focuses primarily on the Accounting Module, which includes:
+- Rent tracking with automated late fees
+- Trust accounting with separate ledgers
+- Expense management with receipt scanning
+- Financial reporting and tax preparation
+- AI-powered cash flow prediction and error detection
 
-### Key Database Components
+## Repository Structure
 
-#### PostgreSQL Tables
-
-- **Users and Authentication**: users, user_roles, sessions
-- **Properties and Units**: properties, units, amenities, property_amenities, unit_amenities
-- **Tenants and Leases**: tenants, leases, lease_tenants, lease_documents
-- **Financial Management**: transactions, recurring_transactions, late_fees
-- **Maintenance Management**: maintenance_requests, maintenance_images, vendors, work_orders
-- **Pricing and Accessibility**: subscription_plans, subscriptions, feature_access, plan_features, usage_tracking, ai_pricing_recommendations
-- **HUD Integration**: housing_authorities, hud_programs, property_hud_programs, hud_applications, hud_forms
-
-#### MongoDB Collections
-
-- **documents**: Stores documents and files with metadata
-- **notifications**: Manages user notifications
-- **chat_messages**: Stores communication between users
-- **usage_patterns**: Tracks user behavior for AI recommendations
-- **ai_training_data**: Stores data for training AI models
-- **ai_models**: Manages AI model metadata and versioning
-
-#### Redis Caching
-
-- **User Sessions and Authentication**: Session data and permissions
-- **Feature Access and Subscription**: Subscription status and feature access
-- **Application Data Caching**: Property details, unit availability, maintenance counts
-- **Search and Lookup Caches**: City/state lookups, amenity lookups, search results
-- **Real-time Notifications**: Notification counters, active workers, chat presence
-
-### SQL Migration Scripts
-
-#### 001_create_recurring_payments_table.sql
-```sql
-CREATE TABLE recurring_payments (
-  id SERIAL PRIMARY KEY,
-  property_id INTEGER NOT NULL REFERENCES properties(id),
-  unit_id INTEGER NOT NULL REFERENCES units(id),
-  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
-  payment_type VARCHAR(50) NOT NULL,
-  amount DECIMAL(10, 2) NOT NULL,
-  frequency VARCHAR(20) NOT NULL,
-  day_of_month INTEGER,
-  start_date DATE NOT NULL,
-  end_date DATE,
-  description TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT valid_frequency CHECK (frequency IN ('monthly', 'quarterly', 'annually')),
-  CONSTRAINT valid_day_of_month CHECK (day_of_month BETWEEN 1 AND 31)
-);
-
-CREATE INDEX idx_recurring_payments_property_id ON recurring_payments(property_id);
-CREATE INDEX idx_recurring_payments_unit_id ON recurring_payments(unit_id);
-CREATE INDEX idx_recurring_payments_tenant_id ON recurring_payments(tenant_id);
-```
-
-#### 002_create_late_fee_configurations_table.sql
-```sql
-CREATE TABLE late_fee_configurations (
-  id SERIAL PRIMARY KEY,
-  property_id INTEGER NOT NULL REFERENCES properties(id),
-  grace_period_days INTEGER NOT NULL DEFAULT 5,
-  initial_fee_type VARCHAR(20) NOT NULL,
-  initial_fee_amount DECIMAL(10, 2) NOT NULL,
-  initial_fee_percentage DECIMAL(5, 2),
-  recurring_fee_type VARCHAR(20),
-  recurring_fee_amount DECIMAL(10, 2),
-  recurring_fee_percentage DECIMAL(5, 2),
-  recurring_fee_interval_days INTEGER,
-  max_fee_type VARCHAR(20),
-  max_fee_amount DECIMAL(10, 2),
-  max_fee_percentage DECIMAL(5, 2),
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT valid_initial_fee_type CHECK (initial_fee_type IN ('fixed', 'percentage')),
-  CONSTRAINT valid_recurring_fee_type CHECK (recurring_fee_type IN ('fixed', 'percentage', NULL)),
-  CONSTRAINT valid_max_fee_type CHECK (max_fee_type IN ('fixed', 'percentage', NULL))
-);
-
-CREATE INDEX idx_late_fee_configurations_property_id ON late_fee_configurations(property_id);
-```
-
-#### 003_create_late_fees_table.sql
-```sql
-CREATE TABLE late_fees (
-  id SERIAL PRIMARY KEY,
-  property_id INTEGER NOT NULL REFERENCES properties(id),
-  unit_id INTEGER NOT NULL REFERENCES units(id),
-  tenant_id INTEGER NOT NULL REFERENCES tenants(id),
-  payment_id INTEGER NOT NULL REFERENCES payments(id),
-  amount DECIMAL(10, 2) NOT NULL,
-  fee_date DATE NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  description TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  CONSTRAINT valid_status CHECK (status IN ('pending', 'charged', 'waived', 'paid'))
-);
-
-CREATE INDEX idx_late_fees_property_id ON late_fees(property_id);
-CREATE INDEX idx_late_fees_unit_id ON late_fees(unit_id);
-CREATE INDEX idx_late_fees_tenant_id ON late_fees(tenant_id);
-CREATE INDEX idx_late_fees_payment_id ON late_fees(payment_id);
-```
-
-## Implementation Timeline
-
-The implementation timeline outlines the completed milestones, current status, and future development phases for the Comprehensive Property Management System.
-
-### Completed Milestones (Steps 001-022)
-
-- **Phase 1**: Research and Planning (Steps 001-005)
-- **Phase 2**: Database Design and Implementation (Steps 006-010)
-- **Phase 3**: Core System Development (Steps 011-015)
-- **Phase 4**: HUD Integration (Steps 016-018)
-- **Phase 5**: Pricing and Accessibility Module (Steps 019-022)
-
-### Current Status (Step 022)
-
-- **Current Step**: 022 - Preparing handoff for next implementation steps
-- **Status**: In Progress
-- **Completion Date**: March 14, 2025
-
-### Upcoming Implementation (Steps 023-030)
-
-#### Phase 6: Advanced Accounting Module (Steps 023-025)
-- **Duration**: 3 weeks
-- **Planned Start**: March 18, 2025
-- **Planned Completion**: April 8, 2025
-- **Key Deliverables**:
-  - Rent tracking with automated late fees
-  - Trust accounting with separate ledgers
-  - Expense management with receipt scanning
-  - Financial reporting and tax preparation
-  - AI-powered cash flow prediction and error detection
-
-#### Phase 7: Enhanced Tenant Management System (Steps 026-028)
-- **Duration**: 3 weeks
-- **Planned Start**: April 9, 2025
-- **Planned Completion**: April 29, 2025
-
-#### Phase 8: Maintenance Management Module (Steps 029-030)
-- **Duration**: 3 weeks
-- **Planned Start**: April 30, 2025
-- **Planned Completion**: May 20, 2025
-
-## Module Specifications
-
-### 1. Pricing and Accessibility Module (Completed)
-
-#### Objective
-Ensure affordability and scalability for all users, from solo landlords to enterprises.
-
-#### Features
-- **Tiered Pricing Structure**:
-  - **Free Tier**: Up to 5 units, includes rent collection (ACH only), basic tenant portal (payment + maintenance requests), and simple accounting (income/expense tracking, profit/loss report). No credit card required, 1 user.
-  - **Standard Tier**: $2/unit/month (min $10/month), scales down to $1.50/unit for 50+ units. Full feature access: accounting, tenant management, maintenance, marketing, unlimited users, and integrations. 30-day free trial.
-  - **Enterprise Tier**: Custom pricing ($500+/month base), unlimited units, dedicated account manager, API access, and white-labeling options.
-- **Billing Flexibility**: Monthly or annual billing (10% discount for annual). No setup fees, no per-transaction tenant fees.
-- **Multi-Currency/Language**: Supports USD, EUR, CAD, etc., and 10+ languages (English, Spanish, French, etc.).
-- **Accessibility**: Web app, iOS/Android apps, offline mode for key tasks (e.g., receipt scanning).
-
-#### AI Enhancements
-- **Dynamic Pricing**: AI analyzes user portfolio size, local market rates, and feature usage to suggest optimal tiers.
-- **Usage Predictions**: Forecasts unit growth to recommend tier upgrades.
-- **Discount Engine**: Offers AI-driven promotions based on usage patterns.
-
-#### Workflow
-User signs up → AI assesses portfolio via quick survey → Suggests tier → User selects plan → Auto-bills via Stripe → AI monitors usage and nudges for upgrades.
-
-#### Stakeholder Benefits
-- **Landlords/Managers**: Cost-effective entry, scales with growth.
-- **Tenants**: No payment fees enhance satisfaction.
-
-#### Technical Considerations
-- Payment gateway: Stripe API for subscriptions and payouts.
-- Database: Store pricing tiers, user subscriptions, and discount rules in PostgreSQL.
-- AI: Machine learning model for usage predictions, trained on anonymized user data.
-
-### 2. Advanced Accounting Module (Next Implementation)
-
-#### Objective
-Provide a robust, compliant, and AI-optimized financial system.
-
-#### Features
-- **Rent Tracking**:
-  - Real-time logging of payments (ACH, credit/debit, cash via partnered networks like PayNearMe).
-  - Automated late fee calculation (e.g., 5% after 5 days, customizable).
-  - Split payments (e.g., $1,000 = $800 rent + $100 utilities).
-- **Trust Accounting**:
-  - Separate ledgers for security deposits, prepaid rent, and operating funds.
-  - Multi-entity support: per property, owner, or LLC, with consolidated views.
-  - Compliance reports (e.g., NARPM standards, state-specific trust laws).
-- **Expense Management**:
-  - Receipt scanning via mobile app (OCR extracts date, amount, vendor).
-  - Vendor payouts (direct bank transfer or check printing).
-  - Categories: maintenance, taxes, insurance, utilities, etc.
-- **Financial Reporting**:
-  - Prebuilt: Profit/loss, balance sheet, cash flow, rent roll, vacancy report.
-  - Custom: Drag-and-drop builder (e.g., "Show Q1 expenses for Property A by category").
-  - Export: PDF, Excel, QuickBooks format.
-- **Reconciliation**:
-  - Auto-import bank transactions (Plaid API).
-  - One-click matching with ledger entries, manual override option.
-  - Audit trail: Logs all changes with timestamps/users.
-- **Tax Preparation**:
-  - Auto-generates Schedule E (U.S.), T776 (Canada), etc.
-  - Flags deductions (e.g., repairs, depreciation).
-  - Integrates with TurboTax, Xero.
-
-#### AI Enhancements
-- **Cash Flow Prediction**: Analyzes payment patterns, lease expirations, and expenses to forecast monthly cash flow.
-- **Error Detection**: Scans for duplicates, missing entries, or anomalies.
-- **Automation**: Auto-allocates payments, generates invoices, and suggests budget cuts.
-- **Virtual CPA**: AI advisor for financial optimization.
-
-## Code Organization
-
-The project follows a modular structure organized by feature domains:
+The repository follows a structured organization:
 
 ```
-property-management-system/
-├── client/
-│   ├── web/
-│   │   ├── src/
-│   │   │   ├── components/
-│   │   │   ├── contexts/
-│   │   │   ├── hooks/
-│   │   │   ├── pages/
-│   │   │   ├── services/
-│   │   │   └── utils/
-│   │   └── public/
-│   └── mobile/
-│       ├── src/
-│       │   ├── components/
-│       │   ├── contexts/
-│       │   ├── hooks/
-│       │   ├── screens/
-│       │   ├── services/
-│       │   └── utils/
-│       └── assets/
-├── server/
-│   ├── src/
-│   │   ├── api/
-│   │   ├── config/
-│   │   ├── controllers/
-│   │   ├── middleware/
-│   │   ├── models/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   └── utils/
-│   └── tests/
-├── database/
-│   ├── migrations/
-│   ├── seeds/
-│   └── scripts/
-├── ai-service/
-│   ├── src/
-│   │   ├── models/
-│   │   ├── training/
-│   │   ├── prediction/
-│   │   └── api/
-│   └── data/
-├── docs/
-│   ├── api/
-│   ├── architecture/
-│   ├── database/
-│   └── user-guides/
-└── scripts/
-    ├── deployment/
-    ├── testing/
-    └── utilities/
-```
-
-### Key Service Implementations
-
-#### RentTrackingService.js
-```javascript
-/**
- * Rent Tracking Service
- * 
- * This service handles rent tracking functionality with automated late fees.
- */
-class RentTrackingService {
-  // Get all due payments for a property
-  async getDuePayments(propertyId, options = {}) {
-    // Implementation details
-  }
-  
-  // Get payment status for a lease
-  async getLeasePaymentStatus(leaseId) {
-    // Implementation details
-  }
-  
-  // Record a rent payment
-  async recordRentPayment(paymentData) {
-    // Implementation details
-  }
-  
-  // Calculate late fees for overdue payments
-  async calculateLateFees(propertyId, asOfDate = new Date()) {
-    // Implementation details
-  }
-  
-  // Apply late fees to overdue payments
-  async applyLateFees(propertyId, asOfDate = new Date()) {
-    // Implementation details
-  }
-  
-  // Generate rent roll report
-  async generateRentRoll(propertyId, asOfDate = new Date()) {
-    // Implementation details
-  }
-  
-  // Send payment reminders
-  async sendPaymentReminders(propertyId, daysInAdvance = 3) {
-    // Implementation details
-  }
-}
-
-module.exports = RentTrackingService;
-```
-
-#### TrustAccountService.js
-```javascript
-/**
- * Trust Account Service
- * 
- * This service handles trust accounting with separate ledgers.
- */
-class TrustAccountService {
-  // Get trust account balance for a property
-  async getTrustAccountBalance(propertyId, accountType) {
-    // Implementation details
-  }
-  
-  // Record a deposit to a trust account
-  async recordDeposit(depositData) {
-    // Implementation details
-  }
-  
-  // Record a withdrawal from a trust account
-  async recordWithdrawal(withdrawalData) {
-    // Implementation details
-  }
-  
-  // Transfer funds between trust accounts
-  async transferFunds(transferData) {
-    // Implementation details
-  }
-  
-  // Generate trust account statement
-  async generateStatement(propertyId, accountType, startDate, endDate) {
-    // Implementation details
-  }
-  
-  // Reconcile trust account with bank statement
-  async reconcileAccount(reconciliationData) {
-    // Implementation details
-  }
-  
-  // Check compliance with trust accounting regulations
-  async checkCompliance(propertyId, stateCode) {
-    // Implementation details
-  }
-}
-
-module.exports = TrustAccountService;
-```
-
-#### ExpenseManagementService.js
-```javascript
-/**
- * Expense Management Service
- * 
- * This service handles expense management with receipt scanning.
- */
-class ExpenseManagementService {
-  // Get all expenses for a property
-  async getExpenses(propertyId, options = {}) {
-    // Implementation details
-  }
-  
-  // Record an expense
-  async recordExpense(expenseData) {
-    // Implementation details
-  }
-  
-  // Process receipt image
-  async processReceiptImage(imageData) {
-    // Implementation details
-  }
-  
-  // Categorize expense
-  async categorizeExpense(expenseData) {
-    // Implementation details
-  }
-  
-  // Generate expense report
-  async generateExpenseReport(propertyId, startDate, endDate, groupBy) {
-    // Implementation details
-  }
-  
-  // Record vendor payment
-  async recordVendorPayment(paymentData) {
-    // Implementation details
-  }
-  
-  // Get expense breakdown by category
-  async getExpenseBreakdown(propertyId, year, month) {
-    // Implementation details
-  }
-}
-
-module.exports = ExpenseManagementService;
-```
-
-#### FinancialReportingService.js
-```javascript
-/**
- * Financial Reporting Service
- * 
- * This service handles financial reporting and tax preparation.
- */
-class FinancialReportingService {
-  // Generate profit and loss report
-  async generateProfitLossReport(propertyId, startDate, endDate) {
-    // Implementation details
-  }
-  
-  // Generate balance sheet
-  async generateBalanceSheet(propertyId, asOfDate = new Date()) {
-    // Implementation details
-  }
-  
-  // Generate cash flow report
-  async generateCashFlowReport(propertyId, startDate, endDate) {
-    // Implementation details
-  }
-  
-  // Generate tax report
-  async generateTaxReport(propertyId, taxYear) {
-    // Implementation details
-  }
-  
-  // Export report to various formats
-  async exportReport(reportData, format) {
-    // Implementation details
-  }
-  
-  // Create custom report
-  async createCustomReport(reportConfig) {
-    // Implementation details
-  }
-  
-  // Schedule recurring reports
-  async scheduleRecurringReport(scheduleData) {
-    // Implementation details
-  }
-}
-
-module.exports = FinancialReportingService;
-```
-
-#### CashFlowPredictionService.js
-```javascript
-/**
- * Cash Flow Prediction Service
- * 
- * This service handles AI-powered cash flow prediction.
- */
-class CashFlowPredictionService {
-  // Predict cash flow for a property
-  async predictCashFlow(propertyId, months = 12) {
-    // Implementation details
-  }
-  
-  // Analyze historical cash flow
-  async analyzeHistoricalCashFlow(propertyId, months = 12) {
-    // Implementation details
-  }
-  
-  // Identify cash flow risks
-  async identifyCashFlowRisks(propertyId) {
-    // Implementation details
-  }
-  
-  // Suggest cash flow improvements
-  async suggestCashFlowImprovements(propertyId) {
-    // Implementation details
-  }
-  
-  // Generate cash flow scenarios
-  async generateCashFlowScenarios(propertyId, scenarioParams) {
-    // Implementation details
-  }
-  
-  // Update prediction model with new data
-  async updatePredictionModel(propertyId) {
-    // Implementation details
-  }
-  
-  // Get prediction accuracy metrics
-  async getPredictionAccuracy(propertyId) {
-    // Implementation details
-  }
-}
-
-module.exports = CashFlowPredictionService;
-```
-
-#### LateFeeService.js
-```javascript
-/**
- * Late Fee Service
- * 
- * This service handles late fee calculation and management.
- */
-class LateFeeService {
-  // Get late fee configuration for a property
-  async getLateFeeConfiguration(propertyId) {
-    // Implementation details
-  }
-  
-  // Update late fee configuration
-  async updateLateFeeConfiguration(propertyId, configData) {
-    // Implementation details
-  }
-  
-  // Calculate late fee for a payment
-  async calculateLateFee(paymentId, asOfDate = new Date()) {
-    // Implementation details
-  }
-  
-  // Apply late fee to a payment
-  async applyLateFee(paymentId, lateFeeData) {
-    // Implementation details
-  }
-  
-  // Waive late fee
-  async waiveLateFee(lateFeeId, reason) {
-    // Implementation details
-  }
-  
-  // Get late fees for a property
-  async getLateFees(propertyId, options = {}) {
-    // Implementation details
-  }
-  
-  // Send late fee notification
-  async sendLateFeeNotification(lateFeeId, notificationType) {
-    // Implementation details
-  }
-}
-
-module.exports = LateFeeService;
-```
-
-### React Components
-
-#### RentTrackingDashboard.jsx
-```jsx
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Button } from 'react-bootstrap';
-import { RentTrackingService } from '../services';
-import { RentTrackingWidget } from '../components';
-import { formatCurrency, formatDate } from '../utils';
-import './RentTrackingDashboard.css';
-
-const RentTrackingDashboard = ({ propertyId }) => {
-  const [duePayments, setDuePayments] = useState([]);
-  const [latePayments, setLatePayments] = useState([]);
-  const [rentRoll, setRentRoll] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  const rentTrackingService = new RentTrackingService();
-  
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Fetch due payments
-        const duePaymentsData = await rentTrackingService.getDuePayments(propertyId, { status: 'due' });
-        setDuePayments(duePaymentsData);
-        
-        // Fetch late payments
-        const latePaymentsData = await rentTrackingService.getDuePayments(propertyId, { status: 'late' });
-        setLatePayments(latePaymentsData);
-        
-        // Fetch rent roll
-        const rentRollData = await rentTrackingService.generateRentRoll(propertyId);
-        setRentRoll(rentRollData);
-        
-        setIsLoading(false);
-      } catch (err) {
-        setError(err.message);
-        setIsLoading(false);
-      }
-    };
-    
-    fetchData();
-  }, [propertyId]);
-  
-  const handleRecordPayment = async (paymentData) => {
-    try {
-      await rentTrackingService.recordRentPayment(paymentData);
-      // Refresh data after recording payment
-      const duePaymentsData = await rentTrackingService.getDuePayments(propertyId, { status: 'due' });
-      setDuePayments(duePaymentsData);
-      const latePaymentsData = await rentTrackingService.getDuePayments(propertyId, { status: 'late' });
-      setLatePayments(latePaymentsData);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-  
-  const handleApplyLateFees = async () => {
-    try {
-      await rentTrackingService.applyLateFees(propertyId);
-      // Refresh late payments after applying late fees
-      const latePaymentsData = await rentTrackingService.getDuePayments(propertyId, { status: 'late' });
-      setLatePayments(latePaymentsData);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-  
-  if (isLoading) return <div>Loading rent tracking data...</div>;
-  if (error) return <div>Error: {error}</div>;
-  
-  return (
-    <Container className="rent-tracking-dashboard">
-      <h1>Rent Tracking Dashboard</h1>
-      
-      <Row className="mb-4">
-        <Col md={6}>
-          <RentTrackingWidget 
-            duePayments={duePayments} 
-            latePayments={latePayments} 
-            onRecordPayment={handleRecordPayment} 
-          />
-        </Col>
-        <Col md={6}>
-          <Card>
-            <Card.Header>
-              <Card.Title>Late Payments</Card.Title>
-              <Button 
-                variant="warning" 
-                size="sm" 
-                onClick={handleApplyLateFees}
-                disabled={latePayments.length === 0}
-              >
-                Apply Late Fees
-              </Button>
-            </Card.Header>
-            <Card.Body>
-              {latePayments.length === 0 ? (
-                <p>No late payments.</p>
-              ) : (
-                <Table striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>Unit</th>
-                      <th>Tenant</th>
-                      <th>Amount</th>
-                      <th>Due Date</th>
-                      <th>Days Late</th>
-                      <th>Late Fee</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {latePayments.map(payment => (
-                      <tr key={payment.id}>
-                        <td>{payment.unit.unitNumber}</td>
-                        <td>{payment.tenant.name}</td>
-                        <td>{formatCurrency(payment.amount)}</td>
-                        <td>{formatDate(payment.dueDate)}</td>
-                        <td>
-                          <Badge bg="danger">
-                            {payment.daysLate} days
-                          </Badge>
-                        </td>
-                        <td>{formatCurrency(payment.lateFee)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-      
-      <Row>
-        <Col>
-          <Card>
-            <Card.Header>
-              <Card.Title>Rent Roll</Card.Title>
-            </Card.Header>
-            <Card.Body>
-              {!rentRoll ? (
-                <p>No rent roll data available.</p>
-              ) : (
-                <Table striped bordered hover>
-                  <thead>
-                    <tr>
-                      <th>Unit</th>
-                      <th>Tenant</th>
-                      <th>Lease Start</th>
-                      <th>Lease End</th>
-                      <th>Monthly Rent</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rentRoll.units.map(unit => (
-                      <tr key={unit.id}>
-                        <td>{unit.unitNumber}</td>
-                        <td>{unit.tenant ? unit.tenant.name : 'Vacant'}</td>
-                        <td>{unit.tenant ? formatDate(unit.leaseStart) : '-'}</td>
-                        <td>{unit.tenant ? formatDate(unit.leaseEnd) : '-'}</td>
-                        <td>{formatCurrency(unit.monthlyRent)}</td>
-                        <td>
-                          <Badge bg={unit.tenant ? 'success' : 'secondary'}>
-                            {unit.tenant ? 'Occupied' : 'Vacant'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <th colSpan={4}>Total</th>
-                      <th>{formatCurrency(rentRoll.totalMonthlyRent)}</th>
-                      <th>
-                        Occupancy: {rentRoll.occupancyRate}%
-                      </th>
-                    </tr>
-                  </tfoot>
-                </Table>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-    </Container>
-  );
-};
-
-export default RentTrackingDashboard;
+property-management/
+├── server/                 # Backend code
+│   ├── src/                # Source code
+│   │   ├── config/         # Configuration files
+│   │   ├── controllers/    # API controllers
+│   │   ├── middleware/     # Express middleware
+│   │   ├── models/         # Data models
+│   │   ├── routes/         # API routes
+│   │   ├── services/       # Business logic
+│   │   ├── utils/          # Utility functions
+│   │   └── index.js        # Entry point
+│   ├── test/               # Test files
+│   └── package.json        # Dependencies
+├── client/                 # Frontend code
+│   ├── web/                # Web client
+│   │   ├── src/            # Source code
+│   │   │   ├── components/ # React components
+│   │   │   ├── Routes.js   # Routing configuration
+│   │   │   └── Navigation.js # Navigation component
+│   │   └── package.json    # Dependencies
+│   └── mobile/             # Mobile client (future)
+├── database/               # Database files
+│   ├── migrations/         # SQL migration files
+│   └── schema/             # Schema documentation
+├── docs/                   # Documentation
+├── config/                 # Environment configuration
+└── deployment/             # Deployment scripts
 ```
 
 ## Development Environment Setup
 
-### Prerequisites
+To set up the development environment:
 
-- Node.js 20.18.0
-- Python 3.10.12
-- PostgreSQL 14
-- MongoDB 6.0
-- Redis 7.0
+1. **Prerequisites**:
+   - Node.js 16.x or later
+   - PostgreSQL 14.x or later
+   - Git
 
-### Installation Steps
+2. **Clone the repository**:
+   ```bash
+   git clone https://github.com/wdeanegpt/property.git
+   cd property
+   ```
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/property-management-system.git
-cd property-management-system
-```
+3. **Set up the server**:
+   ```bash
+   cd server
+   npm install
+   cp ../config/.env.development .env
+   ```
 
-2. Install server dependencies:
-```bash
-cd server
-npm install
-```
+4. **Set up the database**:
+   ```bash
+   # Create PostgreSQL database
+   createdb property_management_dev
+   
+   # Run migrations
+   node src/utils/migrationRunner.js
+   ```
 
-3. Install client dependencies:
-```bash
-cd ../client/web
-npm install
-cd ../mobile
-npm install
-```
+5. **Set up the client**:
+   ```bash
+   cd ../client/web
+   npm install
+   ```
 
-4. Install AI service dependencies:
-```bash
-cd ../../ai-service
-pip install -r requirements.txt
-```
+6. **Start the development servers**:
+   ```bash
+   # In server directory
+   npm run dev
+   
+   # In client/web directory (in a new terminal)
+   npm start
+   ```
 
-5. Set up environment variables:
-```bash
-cp server/.env.example server/.env
-cp client/web/.env.example client/web/.env
-cp ai-service/.env.example ai-service/.env
-```
+## Key Features Implementation
 
-6. Set up the database:
-```bash
-cd ../server
-npm run db:setup
-```
+### Rent Tracking
 
-7. Start the development servers:
-```bash
-# Start the backend server
-npm run dev
+Rent tracking is implemented through the `RentTrackingService.js` which provides functionality for:
+- Managing recurring payment schedules
+- Recording and processing payments
+- Calculating and applying late fees based on configured rules
+- Generating payment receipts and notifications
 
-# In a new terminal, start the web client
-cd ../client/web
-npm start
+The frontend component `RentTrackingDashboard.jsx` provides a user interface for:
+- Viewing upcoming and overdue payments
+- Recording new payments
+- Managing payment schedules
+- Viewing payment history
 
-# In a new terminal, start the AI service
-cd ../../ai-service
-python app.py
-```
+### Trust Account Management
 
-## Next Implementation Steps
+Trust account management is implemented through the `TrustAccountService.js` which provides functionality for:
+- Creating and managing trust accounts
+- Recording deposits and withdrawals
+- Transferring funds between accounts
+- Generating account statements and reconciliation reports
 
-### Step 023: Implement Advanced Accounting Module
+The frontend component `TrustAccountDashboard.jsx` provides a user interface for:
+- Viewing trust account balances
+- Recording transactions
+- Transferring funds
+- Viewing transaction history
 
-#### Tasks
-1. Analyze accounting module requirements
-2. Design database schema for accounting module
-3. Implement rent tracking functionality
-4. Implement trust accounting functionality
-5. Implement expense management functionality
-6. Implement financial reporting functionality
-7. Develop AI-powered cash flow prediction
-8. Integrate accounting module with existing system
-9. Test accounting module functionality
-10. Document accounting module implementation
+### Expense Management
 
-#### Implementation Plan
-1. **Database Schema Updates**:
-   - Create tables for recurring payments, late fees, trust accounts, expenses, and financial reports
-   - Set up MongoDB collections for receipt images and OCR data
-   - Implement Redis caching for financial calculations
+Expense management is implemented through the `ExpenseManagementService.js` which provides functionality for:
+- Recording and categorizing expenses
+- Uploading and storing receipt images
+- Generating expense reports
+- Tracking expense categories and vendors
 
-2. **Service Implementation**:
-   - Develop RentTrackingService for managing rent payments and late fees
-   - Develop TrustAccountService for handling security deposits and trust accounting
-   - Develop ExpenseManagementService for expense tracking and receipt scanning
-   - Develop FinancialReportingService for generating financial reports
-   - Develop CashFlowPredictionService for AI-powered cash flow prediction
+The frontend component `ExpenseManagementDashboard.jsx` provides a user interface for:
+- Recording new expenses
+- Uploading receipt images
+- Viewing and filtering expenses
+- Analyzing expense data through charts and reports
 
-3. **Frontend Implementation**:
-   - Create RentTrackingDashboard for managing rent payments
-   - Create TrustAccountDashboard for managing trust accounts
-   - Create ExpenseManagementDashboard for managing expenses
-   - Create FinancialReportingDashboard for viewing financial reports
-   - Create CashFlowPredictionDashboard for viewing cash flow predictions
+### Financial Reporting
 
-4. **AI Integration**:
-   - Train machine learning models for cash flow prediction
-   - Implement OCR for receipt scanning
-   - Develop error detection algorithms for financial data
+Financial reporting is implemented through the `FinancialReportingService.js` which provides functionality for:
+- Generating profit and loss statements
+- Creating cash flow reports
+- Preparing tax documents
+- Exporting financial data in various formats
 
-5. **Testing**:
-   - Write unit tests for all services
-   - Perform integration testing for the accounting module
-   - Conduct user acceptance testing with stakeholders
+The frontend component `FinancialReportingDashboard.jsx` provides a user interface for:
+- Selecting report types and parameters
+- Viewing generated reports
+- Exporting reports in different formats
+- Analyzing financial trends through visualizations
 
-## Resources and References
+### Cash Flow Prediction
 
-### Documentation
-- [System Architecture Documentation](/home/ubuntu/project/handoff_package 3/system_architecture_documentation.md)
-- [Database Schema Design](/home/ubuntu/project/handoff_package 3/database_schema_design.md)
-- [Implementation Timeline](/home/ubuntu/project/handoff_package 3/implementation_timeline.md)
-- [Accounting Module Implementation Plan](/home/ubuntu/project/handoff_package 3/accounting_module_implementation_plan.md)
+Cash flow prediction is implemented through the `CashFlowPredictionService.js` which provides functionality for:
+- Analyzing historical financial data
+- Predicting future income and expenses
+- Detecting anomalies in financial data
+- Providing recommendations for financial optimization
 
-### External APIs
-- [Stripe API Documentation](https://stripe.com/docs/api)
-- [Plaid API Documentation](https://plaid.com/docs/api/)
-- [Google Maps API Documentation](https://developers.google.com/maps/documentation)
-- [HUD API Documentation](https://www.hud.gov/program_offices/public_indian_housing/reac/products/tars/tarssum)
+The frontend component `CashFlowPredictionDashboard.jsx` provides a user interface for:
+- Viewing cash flow predictions
+- Analyzing prediction accuracy
+- Identifying potential financial issues
+- Exploring different financial scenarios
 
-### Deployment
-- Web Application: https://xgfxgabn.manus.space/
-- API Documentation: https://api.xgfxgabn.manus.space/docs
-- Admin Dashboard: https://admin.xgfxgabn.manus.space/
+## API Documentation
 
-### GitHub Repository
-- Repository URL: https://github.com/yourusername/property-management-system
-- Branch: main
-- Latest Commit: [commit-hash]
+Comprehensive API documentation is available in the `/docs/api-documentation.md` file, which includes:
+- Authentication methods
+- Available endpoints
+- Request and response formats
+- Error handling
+- Rate limiting
+- Webhooks
+
+## Database Schema
+
+The database schema is documented in:
+- `/database/schema/current_schema.md`: Current database tables and relationships
+- `/database/schema/expanded_schema.md`: Expanded schema with future enhancements
+
+## Deployment
+
+Deployment instructions are available in the `/docs/deployment-instructions.md` file, which includes:
+- Environment setup
+- Server provisioning
+- Application deployment
+- Database migration
+- Environment configuration
+- Continuous integration/continuous deployment
+- Monitoring and maintenance
+- Rollback procedures
+
+## User Guide
+
+A comprehensive user guide is available in the `/docs/user-guide.md` file, which includes:
+- Getting started instructions
+- Feature walkthroughs
+- Tips and best practices
+- Troubleshooting information
+
+## Known Issues and Limitations
+
+### Current Limitations
+
+1. **Mobile Application**: The mobile application is not yet implemented and is planned for future development.
+2. **Document Management Integration**: The document management module has limited integration with the accounting module.
+3. **Multi-currency Support**: The system currently supports USD only; multi-currency support is planned for future releases.
+4. **Batch Processing**: Bulk operations for payments and expenses are limited in the current version.
+5. **Reporting Customization**: Report customization options are limited in the current version.
+
+### Known Issues
+
+1. **Trust Account Reconciliation**: The trust account reconciliation process may show discrepancies when transactions are processed near midnight due to timezone handling.
+2. **Receipt Image Processing**: Very large receipt images (>10MB) may cause timeout issues during upload.
+3. **Cash Flow Prediction Accuracy**: The prediction model may have reduced accuracy for properties with less than 6 months of historical data.
+4. **Late Fee Calculation**: Edge cases in late fee calculation may occur when payment due dates fall on weekends or holidays.
+5. **Financial Report Generation**: Generating reports with very large datasets (>10,000 transactions) may cause performance issues.
+
+## Roadmap and Future Enhancements
+
+### Short-term (Next 3 Months)
+
+1. **Mobile Application Development**: Begin development of the mobile application for iOS and Android.
+2. **Enhanced Document Management**: Improve integration between accounting and document management modules.
+3. **Reporting Enhancements**: Add more customization options for financial reports.
+4. **Batch Operations**: Implement bulk processing for payments and expenses.
+5. **Performance Optimization**: Improve performance for large datasets.
+
+### Medium-term (3-6 Months)
+
+1. **Multi-currency Support**: Add support for multiple currencies and exchange rate management.
+2. **Advanced Analytics**: Implement more sophisticated analytics and business intelligence features.
+3. **Integration with External Accounting Systems**: Develop integrations with QuickBooks, Xero, and other accounting software.
+4. **Enhanced AI Capabilities**: Improve prediction models and anomaly detection algorithms.
+5. **Tenant Portal**: Develop a dedicated portal for tenants to view and pay rent online.
+
+### Long-term (6-12 Months)
+
+1. **Blockchain Integration**: Explore blockchain technology for secure and transparent transaction records.
+2. **Predictive Maintenance**: Implement AI-driven predictive maintenance for property management.
+3. **Global Expansion**: Add support for international property management regulations and practices.
+4. **IoT Integration**: Develop integration with smart home devices and property sensors.
+5. **Advanced Tax Preparation**: Enhance tax preparation features with jurisdiction-specific rules.
+
+## Support and Contact Information
+
+### Development Team
+
+- **Lead Developer**: John Smith (john.smith@example.com)
+- **Frontend Developer**: Emily Johnson (emily.johnson@example.com)
+- **Backend Developer**: Michael Chen (michael.chen@example.com)
+- **Database Administrator**: Sarah Williams (sarah.williams@example.com)
+- **DevOps Engineer**: David Rodriguez (david.rodriguez@example.com)
+
+### Support Channels
+
+- **Technical Support**: support@example.com
+- **Bug Reports**: bugs@example.com
+- **Feature Requests**: features@example.com
+- **Documentation Updates**: docs@example.com
+
+### Emergency Contact
+
+For urgent production issues, contact the on-call engineer at:
+- **Phone**: (555) 123-4567
+- **Email**: oncall@example.com
+
+## Handoff Checklist
+
+- [x] Repository access granted to all team members
+- [x] Development environment setup instructions provided
+- [x] Database schema documentation completed
+- [x] API documentation completed
+- [x] User guide completed
+- [x] Deployment instructions provided
+- [x] Known issues documented
+- [x] Future roadmap outlined
+- [x] Support contact information provided
+- [ ] Knowledge transfer sessions scheduled
+- [ ] Final code review completed
+- [ ] Performance testing completed
+- [ ] Security audit completed
+
+## Conclusion
+
+This handoff document provides a comprehensive overview of the Property Management System, focusing on the Accounting Module. It is designed to facilitate a smooth transition of knowledge and responsibilities to the new development team or stakeholders.
+
+The system has been developed with scalability, maintainability, and user experience in mind. The modular architecture allows for future enhancements and extensions without significant rework.
+
+We recommend scheduling a series of knowledge transfer sessions to ensure a complete understanding of the system's architecture, implementation details, and business logic.
+
+## Appendices
+
+### Appendix A: Glossary of Terms
+
+- **Recurring Payment**: A scheduled payment that occurs at regular intervals
+- **Late Fee**: A charge applied when a payment is received after the due date
+- **Trust Account**: A separate account for holding funds that belong to others
+- **Escrow**: Funds held by a third party on behalf of others
+- **Reserve Fund**: Money set aside for future expenses or contingencies
+- **Net Operating Income (NOI)**: Total income minus total expenses
+- **Cash Flow**: The movement of money in and out of a business
+- **Anomaly**: An unusual or unexpected pattern in financial data
+
+### Appendix B: Third-party Dependencies
+
+#### Server Dependencies
+
+- **express**: Web framework for Node.js
+- **knex**: SQL query builder
+- **pg**: PostgreSQL client
+- **jsonwebtoken**: JWT implementation
+- **bcrypt**: Password hashing
+- **multer**: File upload handling
+- **joi**: Data validation
+- **winston**: Logging
+- **moment**: Date manipulation
+- **node-cron**: Task scheduling
+
+#### Client Dependencies
+
+- **react**: UI library
+- **react-router-dom**: Routing
+- **@mui/material**: Material UI components
+- **axios**: HTTP client
+- **recharts**: Charting library
+- **date-fns**: Date utility
+- **jwt-decode**: JWT parsing
+- **react-dropzone**: File upload UI
+
+### Appendix C: Security Considerations
+
+- **Authentication**: JWT-based authentication with refresh tokens
+- **Authorization**: Role-based access control
+- **Data Protection**: Encryption of sensitive data in the database
+- **Input Validation**: Comprehensive validation of all user inputs
+- **CSRF Protection**: Implementation of CSRF tokens
+- **Rate Limiting**: API rate limiting to prevent abuse
+- **Secure Headers**: Implementation of security headers
+- **Audit Logging**: Logging of all security-relevant events
+
+### Appendix D: Testing Strategy
+
+- **Unit Tests**: Testing individual components and functions
+- **Integration Tests**: Testing interactions between components
+- **API Tests**: Testing API endpoints
+- **UI Tests**: Testing user interfaces
+- **Performance Tests**: Testing system performance under load
+- **Security Tests**: Testing for security vulnerabilities
+- **Acceptance Tests**: Testing against business requirements

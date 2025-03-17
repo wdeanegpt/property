@@ -1,135 +1,143 @@
 import React from 'react';
-import { BrowserRouter as Router, Route, Switch, Redirect } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Box, CssBaseline } from '@mui/material';
 
-// Layout Components
-import MainLayout from './layouts/MainLayout';
-import AuthLayout from './layouts/AuthLayout';
+// Layout components
+import Navigation from './Navigation';
 
-// Authentication Components
-import Login from './components/auth/Login';
-import Register from './components/auth/Register';
-import ForgotPassword from './components/auth/ForgotPassword';
-import ResetPassword from './components/auth/ResetPassword';
+// Dashboard components
+import AccountingDashboard from './components/AccountingDashboard';
+import RentTrackingDashboard from './components/RentTrackingDashboard';
+import TrustAccountDashboard from './components/TrustAccountDashboard';
+import ExpenseManagementDashboard from './components/ExpenseManagementDashboard';
+import FinancialReportingDashboard from './components/FinancialReportingDashboard';
+import CashFlowPredictionDashboard from './components/CashFlowPredictionDashboard';
+import LateFeeManagementWidget from './components/LateFeeManagementWidget';
 
-// Dashboard Components
-import Dashboard from './components/dashboard/Dashboard';
+// Auth components - these would be implemented in a real application
+const Login = () => <div>Login Page</div>;
+const Register = () => <div>Register Page</div>;
+const ForgotPassword = () => <div>Forgot Password Page</div>;
 
-// Property Management Components
-import PropertyList from './components/properties/PropertyList';
-import PropertyDetails from './components/properties/PropertyDetails';
-import PropertyForm from './components/properties/PropertyForm';
+// Error pages
+const NotFound = () => <div>404 - Page Not Found</div>;
 
-// Tenant Management Components
-import TenantList from './components/tenants/TenantList';
-import TenantDetails from './components/tenants/TenantDetails';
-import TenantForm from './components/tenants/TenantForm';
+// Protected route wrapper
+const ProtectedRoute = ({ children }) => {
+  // In a real app, this would check for authentication
+  const isAuthenticated = true;
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
 
-// Lease Management Components
-import LeaseList from './components/leases/LeaseList';
-import LeaseDetails from './components/leases/LeaseDetails';
-import LeaseForm from './components/leases/LeaseForm';
-
-// Accounting Module Components
-import RentTrackingDashboard from './components/accounting/RentTrackingDashboard';
-import TrustAccountDashboard from './components/accounting/TrustAccountDashboard';
-import ExpenseManagementDashboard from './components/accounting/ExpenseManagementDashboard';
-import FinancialReportingDashboard from './components/accounting/FinancialReportingDashboard';
-import LateFeeConfiguration from './components/accounting/LateFeeConfiguration';
-
-// Settings Components
-import UserProfile from './components/settings/UserProfile';
-import CompanySettings from './components/settings/CompanySettings';
-import SystemSettings from './components/settings/SystemSettings';
-
-// Error Pages
-import NotFound from './components/errors/NotFound';
-import Unauthorized from './components/errors/Unauthorized';
-
-// Auth Guard Component
-import AuthGuard from './components/auth/AuthGuard';
-
-const Routes = () => {
+const AppRoutes = () => {
   return (
     <Router>
-      <Switch>
-        {/* Auth Routes */}
-        <Route exact path="/login">
-          <AuthLayout>
-            <Login />
-          </AuthLayout>
-        </Route>
-        <Route exact path="/register">
-          <AuthLayout>
-            <Register />
-          </AuthLayout>
-        </Route>
-        <Route exact path="/forgot-password">
-          <AuthLayout>
-            <ForgotPassword />
-          </AuthLayout>
-        </Route>
-        <Route exact path="/reset-password/:token">
-          <AuthLayout>
-            <ResetPassword />
-          </AuthLayout>
-        </Route>
-
-        {/* Main Application Routes */}
-        <Route path="/app">
-          <AuthGuard>
-            <MainLayout>
-              <Switch>
-                {/* Dashboard */}
-                <Route exact path="/app/dashboard" component={Dashboard} />
-
-                {/* Property Management */}
-                <Route exact path="/app/properties" component={PropertyList} />
-                <Route exact path="/app/properties/new" component={PropertyForm} />
-                <Route exact path="/app/properties/:id" component={PropertyDetails} />
-                <Route exact path="/app/properties/:id/edit" component={PropertyForm} />
-
-                {/* Tenant Management */}
-                <Route exact path="/app/tenants" component={TenantList} />
-                <Route exact path="/app/tenants/new" component={TenantForm} />
-                <Route exact path="/app/tenants/:id" component={TenantDetails} />
-                <Route exact path="/app/tenants/:id/edit" component={TenantForm} />
-
-                {/* Lease Management */}
-                <Route exact path="/app/leases" component={LeaseList} />
-                <Route exact path="/app/leases/new" component={LeaseForm} />
-                <Route exact path="/app/leases/:id" component={LeaseDetails} />
-                <Route exact path="/app/leases/:id/edit" component={LeaseForm} />
-
-                {/* Accounting Module Routes */}
-                <Route exact path="/app/accounting/rent-tracking" component={RentTrackingDashboard} />
-                <Route exact path="/app/accounting/trust-accounts" component={TrustAccountDashboard} />
-                <Route exact path="/app/accounting/expenses" component={ExpenseManagementDashboard} />
-                <Route exact path="/app/accounting/reports" component={FinancialReportingDashboard} />
-                <Route exact path="/app/accounting/late-fees" component={LateFeeConfiguration} />
-
-                {/* Settings */}
-                <Route exact path="/app/settings/profile" component={UserProfile} />
-                <Route exact path="/app/settings/company" component={CompanySettings} />
-                <Route exact path="/app/settings/system" component={SystemSettings} />
-
-                {/* Error Pages */}
-                <Route exact path="/app/unauthorized" component={Unauthorized} />
-                <Route component={NotFound} />
-              </Switch>
-            </MainLayout>
-          </AuthGuard>
-        </Route>
-
-        {/* Redirect root to dashboard if authenticated, otherwise to login */}
-        <Route exact path="/">
-          <Redirect to="/app/dashboard" />
-        </Route>
-
-        {/* 404 Page */}
-        <Route component={NotFound} />
-      </Switch>
+      <CssBaseline />
+      <Routes>
+        {/* Auth routes */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        
+        {/* Main application routes */}
+        <Route path="/" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <AccountingDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/accounting" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <AccountingDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/rent-tracking" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <RentTrackingDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/trust-accounts" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <TrustAccountDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/expenses" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <ExpenseManagementDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/financial-reports" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <FinancialReportingDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/cash-flow" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <CashFlowPredictionDashboard />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/late-fees" element={
+          <ProtectedRoute>
+            <Box sx={{ display: 'flex' }}>
+              <Navigation />
+              <Box component="main" sx={{ flexGrow: 1, p: 3, mt: 8 }}>
+                <LateFeeManagementWidget />
+              </Box>
+            </Box>
+          </ProtectedRoute>
+        } />
+        
+        {/* Catch-all route for 404 */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </Router>
   );
 };
 
-export default Routes;
+export default AppRoutes;

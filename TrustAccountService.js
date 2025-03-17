@@ -1,1814 +1,548 @@
 /**
  * TrustAccountService.js
- * 
- * This service handles trust accounting functionality with separate ledgers
- * for security deposits, escrow funds, and other trust accounts. It provides
- * methods for managing trust accounts, recording transactions, generating
- * statements, and ensuring compliance with trust accounting regulations.
- * 
- * Part of the Advanced Accounting Module (Step 023) for the
- * Comprehensive Property Management System.
+ * Service for managing trust accounts with separate ledgers
  */
 
-const { Pool } = require('pg');
-const moment = require('moment');
-const config = require('../config/database');
-const NotificationService = require('./NotificationService');
+const db = require('../config/database');
 
 class TrustAccountService {
-  constructor() {
-    this.pool = new Pool(config.postgres);
-    this.notificationService = new NotificationService();
-  }
-
   /**
-   * Create a new trust account
-   * 
-   * @param {Object} accountData - Trust account data
-   * @param {number} accountData.propertyId - The ID of the property
-   * @param {string} accountData.accountName - The name of the trust account
-   * @param {string} accountData.accountNumber - The account number (optional)
-   * @param {string} accountData.bankName - The bank name (optional)
-   * @param {string} accountData.routingNumber - The routing number (optional)
-   * @param {string} accountData.accountType - The account type ('security_deposit', 'escrow', 'reserve')
-   * @param {boolean} accountData.isInterestBearing - Whether the account is interest-bearing
-   * @param {number} accountData.interestRate - The annual interest rate (required if isInterestBearing is true)
-   * @param {number} accountData.userId - The ID of the user creating the account
-   * @returns {Promise<Object>} - The created trust account
-   */
-  async createTrustAccount(accountData) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      const {
-        propertyId,
-        accountName,
-        accountNumber = null,
-        bankName = null,
-        routingNumber = null,
-        accountType,
-        isInterestBearing = false,
-        interestRate = null,
-        userId
-      } = accountData;
-      
-      // Validate account type
-      if (!['security_deposit', 'escrow', 'reserve'].includes(accountType)) {
-        throw new Error('Invalid account type. Must be one of: security_deposit, escrow, reserve');
-      }
-      
-      // Validate interest rate if account is interest-bearing
-      if (isInterestBearing && (interestRate === null || interestRate <= 0)) {
-        throw new Error('Interest rate must be provided and greater than zero for interest-bearing accounts');
-      }
-      
-      // Check if a trust account of the same type already exists for the property
-      const checkQuery = `
-        SELECT COUNT(*) AS count
-        FROM trust_accounts
-        WHERE property_id = $1 AND account_type = $2 AND is_active = true
-      `;
-      
-      const checkResult = await client.query(checkQuery, [propertyId, accountType]);
-      
-      if (parseInt(checkResult.rows[0].count) > 0) {
-        throw new Error(`An active trust account of type ${accountType} already exists for this property`);
-      }
-      
-      // Create the trust account
-      const insertQuery = `
-        INSERT INTO trust_accounts (
-          property_id,
-          account_name,
-          account_number,
-          bank_name,
-          routing_number,
-          account_type,
-          is_interest_bearing,
-          interest_rate,
-          balance,
-          is_active,
-          created_by,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0.00, true, $9, NOW(), NOW())
-        RETURNING *
-      `;
-      
-      const insertValues = [
-        propertyId,
-        accountName,
-        accountNumber,
-        bankName,
-        routingNumber,
-        accountType,
-        isInterestBearing,
-        interestRate,
-        userId
-      ];
-      
-      const insertResult = await client.query(insertQuery, insertValues);
-      const trustAccount = insertResult.rows[0];
-      
-      await client.query('COMMIT');
-      
-      return trustAccount;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error creating trust account:', error);
-      throw new Error(`Failed to create trust account: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Update an existing trust account
-   * 
-   * @param {number} accountId - The ID of the trust account to update
-   * @param {Object} accountData - Updated trust account data
-   * @param {string} accountData.accountName - The name of the trust account
-   * @param {string} accountData.accountNumber - The account number (optional)
-   * @param {string} accountData.bankName - The bank name (optional)
-   * @param {string} accountData.routingNumber - The routing number (optional)
-   * @param {boolean} accountData.isInterestBearing - Whether the account is interest-bearing
-   * @param {number} accountData.interestRate - The annual interest rate (required if isInterestBearing is true)
-   * @param {number} accountData.userId - The ID of the user updating the account
-   * @returns {Promise<Object>} - The updated trust account
-   */
-  async updateTrustAccount(accountId, accountData) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Get the current trust account
-      const getQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const getResult = await client.query(getQuery, [accountId]);
-      
-      if (getResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const currentAccount = getResult.rows[0];
-      
-      const {
-        accountName = currentAccount.account_name,
-        accountNumber = currentAccount.account_number,
-        bankName = currentAccount.bank_name,
-        routingNumber = currentAccount.routing_number,
-        isInterestBearing = currentAccount.is_interest_bearing,
-        interestRate = currentAccount.interest_rate
-      } = accountData;
-      
-      // Validate interest rate if account is interest-bearing
-      if (isInterestBearing && (interestRate === null || interestRate <= 0)) {
-        throw new Error('Interest rate must be provided and greater than zero for interest-bearing accounts');
-      }
-      
-      // Update the trust account
-      const updateQuery = `
-        UPDATE trust_accounts
-        SET 
-          account_name = $1,
-          account_number = $2,
-          bank_name = $3,
-          routing_number = $4,
-          is_interest_bearing = $5,
-          interest_rate = $6,
-          updated_at = NOW()
-        WHERE id = $7
-        RETURNING *
-      `;
-      
-      const updateValues = [
-        accountName,
-        accountNumber,
-        bankName,
-        routingNumber,
-        isInterestBearing,
-        isInterestBearing ? interestRate : null,
-        accountId
-      ];
-      
-      const updateResult = await client.query(updateQuery, updateValues);
-      const updatedAccount = updateResult.rows[0];
-      
-      await client.query('COMMIT');
-      
-      return updatedAccount;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error updating trust account:', error);
-      throw new Error(`Failed to update trust account: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Deactivate a trust account
-   * 
-   * @param {number} accountId - The ID of the trust account to deactivate
-   * @returns {Promise<boolean>} - Whether the deactivation was successful
-   */
-  async deactivateTrustAccount(accountId) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Check if the account has a non-zero balance
-      const balanceQuery = `
-        SELECT balance FROM trust_accounts WHERE id = $1
-      `;
-      
-      const balanceResult = await client.query(balanceQuery, [accountId]);
-      
-      if (balanceResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const balance = parseFloat(balanceResult.rows[0].balance);
-      
-      if (balance > 0) {
-        throw new Error('Cannot deactivate trust account with non-zero balance');
-      }
-      
-      // Deactivate the trust account
-      const updateQuery = `
-        UPDATE trust_accounts
-        SET is_active = false, updated_at = NOW()
-        WHERE id = $1
-      `;
-      
-      await client.query(updateQuery, [accountId]);
-      
-      await client.query('COMMIT');
-      
-      return true;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error deactivating trust account:', error);
-      throw new Error(`Failed to deactivate trust account: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Get trust accounts for a property
-   * 
+   * Get all trust accounts for a property
    * @param {number} propertyId - The ID of the property
-   * @param {Object} options - Optional parameters
-   * @param {boolean} options.includeInactive - Whether to include inactive accounts
-   * @param {string} options.accountType - Filter by account type
    * @returns {Promise<Array>} - Array of trust accounts
    */
-  async getTrustAccounts(propertyId, options = {}) {
+  async getTrustAccounts(propertyId) {
     try {
-      const {
-        includeInactive = false,
-        accountType = null
-      } = options;
-      
-      let query = `
-        SELECT 
-          ta.*,
-          p.name AS property_name,
-          CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
-        FROM trust_accounts ta
-        JOIN properties p ON ta.property_id = p.id
-        LEFT JOIN users u ON ta.created_by = u.id
-        WHERE ta.property_id = $1
+      const query = `
+        SELECT * FROM trust_accounts
+        WHERE property_id = $1
+        ORDER BY created_at DESC
       `;
-      
-      const params = [propertyId];
-      let paramIndex = 2;
-      
-      if (!includeInactive) {
-        query += ` AND ta.is_active = true`;
-      }
-      
-      if (accountType) {
-        query += ` AND ta.account_type = $${paramIndex}`;
-        params.push(accountType);
-        paramIndex++;
-      }
-      
-      query += ` ORDER BY ta.account_type, ta.created_at`;
-      
-      const { rows } = await this.pool.query(query, params);
-      
-      return rows;
+      const result = await db.query(query, [propertyId]);
+      return result.rows;
     } catch (error) {
-      console.error('Error getting trust accounts:', error);
-      throw new Error('Failed to get trust accounts');
+      console.error('Error fetching trust accounts:', error);
+      throw new Error('Failed to fetch trust accounts');
     }
   }
 
   /**
    * Get a specific trust account by ID
-   * 
    * @param {number} accountId - The ID of the trust account
    * @returns {Promise<Object>} - The trust account
    */
   async getTrustAccountById(accountId) {
     try {
       const query = `
-        SELECT 
-          ta.*,
-          p.name AS property_name,
-          CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
-        FROM trust_accounts ta
-        JOIN properties p ON ta.property_id = p.id
-        LEFT JOIN users u ON ta.created_by = u.id
-        WHERE ta.id = $1
+        SELECT * FROM trust_accounts
+        WHERE id = $1
       `;
-      
-      const { rows } = await this.pool.query(query, [accountId]);
-      
-      if (rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      return rows[0];
+      const result = await db.query(query, [accountId]);
+      return result.rows[0] || null;
     } catch (error) {
-      console.error('Error getting trust account by ID:', error);
-      throw new Error('Failed to get trust account');
+      console.error('Error fetching trust account:', error);
+      throw new Error('Failed to fetch trust account');
     }
   }
 
   /**
-   * Record a deposit to a trust account
-   * 
-   * @param {Object} depositData - Deposit data
-   * @param {number} depositData.trustAccountId - The ID of the trust account
-   * @param {number} depositData.leaseId - The ID of the lease (optional)
-   * @param {number} depositData.tenantId - The ID of the tenant (optional)
-   * @param {number} depositData.amount - The deposit amount
-   * @param {Date} depositData.transactionDate - The transaction date
-   * @param {string} depositData.description - Description of the deposit
-   * @param {string} depositData.referenceNumber - Reference number (optional)
-   * @param {string} depositData.paymentMethod - Payment method (optional)
-   * @param {number} depositData.userId - The ID of the user recording the deposit
-   * @returns {Promise<Object>} - The recorded deposit transaction
+   * Create a new trust account
+   * @param {Object} accountData - The trust account data
+   * @returns {Promise<Object>} - The created trust account
    */
-  async recordDeposit(depositData) {
-    const client = await this.pool.connect();
-    
+  async createTrustAccount(accountData) {
     try {
-      await client.query('BEGIN');
-      
       const {
-        trustAccountId,
-        leaseId = null,
-        tenantId = null,
-        amount,
-        transactionDate = new Date(),
+        property_id,
+        name,
         description,
-        referenceNumber = null,
-        paymentMethod = null,
-        userId
-      } = depositData;
-      
-      // Validate amount
-      if (amount <= 0) {
-        throw new Error('Deposit amount must be greater than zero');
-      }
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const accountResult = await client.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const account = accountResult.rows[0];
-      
-      // Validate tenant ID for security deposit accounts
-      if (account.account_type === 'security_deposit' && !tenantId) {
-        throw new Error('Tenant ID is required for security deposit accounts');
-      }
-      
-      // Record the deposit
-      const insertQuery = `
-        INSERT INTO trust_account_transactions (
-          trust_account_id,
-          lease_id,
-          tenant_id,
-          transaction_type,
-          amount,
-          transaction_date,
-          description,
-          reference_number,
-          payment_method,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
+        initial_balance,
+        account_type
+      } = accountData;
+
+      const query = `
+        INSERT INTO trust_accounts (
+          property_id, name, description, balance, account_type
         )
-        VALUES ($1, $2, $3, 'deposit', $4, $5, $6, $7, $8, false, $9, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
       `;
-      
-      const insertValues = [
-        trustAccountId,
-        leaseId,
-        tenantId,
-        amount,
-        transactionDate,
+
+      const values = [
+        property_id,
+        name,
         description,
-        referenceNumber,
-        paymentMethod,
-        userId
+        initial_balance || 0,
+        account_type
       ];
-      
-      const insertResult = await client.query(insertQuery, insertValues);
-      const transaction = insertResult.rows[0];
-      
-      // Send notification if tenant ID is provided
-      if (tenantId) {
-        await this.notificationService.sendTrustAccountDepositNotification(
-          tenantId,
-          amount,
-          account.account_type,
-          transactionDate
-        );
-      }
-      
-      await client.query('COMMIT');
-      
-      return transaction;
+
+      const result = await db.query(query, values);
+      return result.rows[0];
     } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error recording deposit:', error);
-      throw new Error(`Failed to record deposit: ${error.message}`);
-    } finally {
-      client.release();
+      console.error('Error creating trust account:', error);
+      throw new Error('Failed to create trust account');
     }
   }
 
   /**
-   * Record a withdrawal from a trust account
-   * 
-   * @param {Object} withdrawalData - Withdrawal data
-   * @param {number} withdrawalData.trustAccountId - The ID of the trust account
-   * @param {number} withdrawalData.leaseId - The ID of the lease (optional)
-   * @param {number} withdrawalData.tenantId - The ID of the tenant (optional)
-   * @param {number} withdrawalData.amount - The withdrawal amount
-   * @param {Date} withdrawalData.transactionDate - The transaction date
-   * @param {string} withdrawalData.description - Description of the withdrawal
-   * @param {string} withdrawalData.referenceNumber - Reference number (optional)
-   * @param {string} withdrawalData.paymentMethod - Payment method (optional)
-   * @param {number} withdrawalData.userId - The ID of the user recording the withdrawal
-   * @returns {Promise<Object>} - The recorded withdrawal transaction
+   * Update an existing trust account
+   * @param {number} accountId - The ID of the trust account
+   * @param {Object} accountData - The updated trust account data
+   * @returns {Promise<Object>} - The updated trust account
    */
-  async recordWithdrawal(withdrawalData) {
-    const client = await this.pool.connect();
-    
+  async updateTrustAccount(accountId, accountData) {
     try {
-      await client.query('BEGIN');
-      
       const {
-        trustAccountId,
-        leaseId = null,
-        tenantId = null,
-        amount,
-        transactionDate = new Date(),
+        name,
         description,
-        referenceNumber = null,
-        paymentMethod = null,
-        userId
-      } = withdrawalData;
-      
-      // Validate amount
-      if (amount <= 0) {
-        throw new Error('Withdrawal amount must be greater than zero');
-      }
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const accountResult = await client.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const account = accountResult.rows[0];
-      
-      // Validate tenant ID for security deposit accounts
-      if (account.account_type === 'security_deposit' && !tenantId) {
-        throw new Error('Tenant ID is required for security deposit accounts');
-      }
-      
-      // Check if sufficient funds are available
-      if (parseFloat(account.balance) < amount) {
-        throw new Error('Insufficient funds in trust account');
-      }
-      
-      // Record the withdrawal
-      const insertQuery = `
-        INSERT INTO trust_account_transactions (
-          trust_account_id,
-          lease_id,
-          tenant_id,
-          transaction_type,
-          amount,
-          transaction_date,
-          description,
-          reference_number,
-          payment_method,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, 'withdrawal', $4, $5, $6, $7, $8, false, $9, NOW(), NOW())
+        account_type
+      } = accountData;
+
+      const query = `
+        UPDATE trust_accounts
+        SET 
+          name = $1,
+          description = $2,
+          account_type = $3,
+          updated_at = NOW()
+        WHERE id = $4
         RETURNING *
       `;
-      
-      const insertValues = [
-        trustAccountId,
-        leaseId,
-        tenantId,
-        amount,
-        transactionDate,
+
+      const values = [
+        name,
         description,
-        referenceNumber,
-        paymentMethod,
-        userId
+        account_type,
+        accountId
       ];
-      
-      const insertResult = await client.query(insertQuery, insertValues);
-      const transaction = insertResult.rows[0];
-      
-      // Send notification if tenant ID is provided
-      if (tenantId) {
-        await this.notificationService.sendTrustAccountWithdrawalNotification(
-          tenantId,
-          amount,
-          account.account_type,
-          transactionDate
-        );
-      }
-      
-      await client.query('COMMIT');
-      
-      return transaction;
+
+      const result = await db.query(query, values);
+      return result.rows[0];
     } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error recording withdrawal:', error);
-      throw new Error(`Failed to record withdrawal: ${error.message}`);
-    } finally {
-      client.release();
+      console.error('Error updating trust account:', error);
+      throw new Error('Failed to update trust account');
     }
   }
 
   /**
-   * Record interest earned on a trust account
-   * 
-   * @param {Object} interestData - Interest data
-   * @param {number} interestData.trustAccountId - The ID of the trust account
-   * @param {number} interestData.amount - The interest amount
-   * @param {Date} interestData.transactionDate - The transaction date
-   * @param {string} interestData.description - Description of the interest
-   * @param {number} interestData.userId - The ID of the user recording the interest
-   * @returns {Promise<Object>} - The recorded interest transaction
+   * Get all transactions for a trust account
+   * @param {number} accountId - The ID of the trust account
+   * @param {Object} options - Query options (limit, offset, date range)
+   * @returns {Promise<Object>} - Transactions with pagination info
    */
-  async recordInterest(interestData) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      const {
-        trustAccountId,
-        amount,
-        transactionDate = new Date(),
-        description = 'Interest earned',
-        userId
-      } = interestData;
-      
-      // Validate amount
-      if (amount <= 0) {
-        throw new Error('Interest amount must be greater than zero');
-      }
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const accountResult = await client.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const account = accountResult.rows[0];
-      
-      // Validate that account is interest-bearing
-      if (!account.is_interest_bearing) {
-        throw new Error('Cannot record interest for non-interest-bearing account');
-      }
-      
-      // Record the interest
-      const insertQuery = `
-        INSERT INTO trust_account_transactions (
-          trust_account_id,
-          transaction_type,
-          amount,
-          transaction_date,
-          description,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, 'interest', $2, $3, $4, false, $5, NOW(), NOW())
-        RETURNING *
-      `;
-      
-      const insertValues = [
-        trustAccountId,
-        amount,
-        transactionDate,
-        description,
-        userId
-      ];
-      
-      const insertResult = await client.query(insertQuery, insertValues);
-      const transaction = insertResult.rows[0];
-      
-      await client.query('COMMIT');
-      
-      return transaction;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error recording interest:', error);
-      throw new Error(`Failed to record interest: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Record a fee charged to a trust account
-   * 
-   * @param {Object} feeData - Fee data
-   * @param {number} feeData.trustAccountId - The ID of the trust account
-   * @param {number} feeData.amount - The fee amount
-   * @param {Date} feeData.transactionDate - The transaction date
-   * @param {string} feeData.description - Description of the fee
-   * @param {number} feeData.userId - The ID of the user recording the fee
-   * @returns {Promise<Object>} - The recorded fee transaction
-   */
-  async recordFee(feeData) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      const {
-        trustAccountId,
-        amount,
-        transactionDate = new Date(),
-        description,
-        userId
-      } = feeData;
-      
-      // Validate amount
-      if (amount <= 0) {
-        throw new Error('Fee amount must be greater than zero');
-      }
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const accountResult = await client.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      const account = accountResult.rows[0];
-      
-      // Check if sufficient funds are available
-      if (parseFloat(account.balance) < amount) {
-        throw new Error('Insufficient funds in trust account');
-      }
-      
-      // Record the fee
-      const insertQuery = `
-        INSERT INTO trust_account_transactions (
-          trust_account_id,
-          transaction_type,
-          amount,
-          transaction_date,
-          description,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, 'fee', $2, $3, $4, false, $5, NOW(), NOW())
-        RETURNING *
-      `;
-      
-      const insertValues = [
-        trustAccountId,
-        amount,
-        transactionDate,
-        description,
-        userId
-      ];
-      
-      const insertResult = await client.query(insertQuery, insertValues);
-      const transaction = insertResult.rows[0];
-      
-      await client.query('COMMIT');
-      
-      return transaction;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error recording fee:', error);
-      throw new Error(`Failed to record fee: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Get transactions for a trust account
-   * 
-   * @param {number} trustAccountId - The ID of the trust account
-   * @param {Object} options - Optional parameters
-   * @param {Date} options.startDate - Start date for filtering
-   * @param {Date} options.endDate - End date for filtering
-   * @param {string} options.transactionType - Filter by transaction type
-   * @param {boolean} options.includeReconciled - Whether to include reconciled transactions
-   * @returns {Promise<Array>} - Array of transactions
-   */
-  async getTransactions(trustAccountId, options = {}) {
+  async getTransactions(accountId, options = {}) {
     try {
       const {
-        startDate = null,
-        endDate = null,
-        transactionType = null,
-        includeReconciled = true
+        limit = 20,
+        offset = 0,
+        startDate,
+        endDate,
+        transactionType
       } = options;
+
+      let filters = ['trust_account_id = $1'];
+      const queryParams = [accountId];
+      let paramIndex = 2;
+
+      if (startDate && endDate) {
+        filters.push(`transaction_date BETWEEN $${paramIndex} AND $${paramIndex + 1}`);
+        queryParams.push(startDate, endDate);
+        paramIndex += 2;
+      } else if (startDate) {
+        filters.push(`transaction_date >= $${paramIndex}`);
+        queryParams.push(startDate);
+        paramIndex += 1;
+      } else if (endDate) {
+        filters.push(`transaction_date <= $${paramIndex}`);
+        queryParams.push(endDate);
+        paramIndex += 1;
+      }
+
+      if (transactionType) {
+        filters.push(`transaction_type = $${paramIndex}`);
+        queryParams.push(transactionType);
+        paramIndex += 1;
+      }
+
+      const whereClause = filters.join(' AND ');
+
+      // Query for transactions
+      const query = `
+        SELECT * FROM trust_account_transactions
+        WHERE ${whereClause}
+        ORDER BY transaction_date DESC, created_at DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+
+      queryParams.push(limit, offset);
       
-      let query = `
-        SELECT 
-          tat.*,
-          ta.account_name,
-          ta.account_type,
-          CONCAT(t.first_name, ' ', t.last_name) AS tenant_name,
-          CONCAT(cu.first_name, ' ', cu.last_name) AS created_by_name,
-          CONCAT(ru.first_name, ' ', ru.last_name) AS reconciled_by_name
-        FROM trust_account_transactions tat
-        JOIN trust_accounts ta ON tat.trust_account_id = ta.id
-        LEFT JOIN tenants t ON tat.tenant_id = t.id
-        LEFT JOIN users cu ON tat.created_by = cu.id
-        LEFT JOIN users ru ON tat.reconciled_by = ru.id
-        WHERE tat.trust_account_id = $1
+      const result = await db.query(query, queryParams);
+      
+      // Get total count for pagination
+      const countQuery = `
+        SELECT COUNT(*) FROM trust_account_transactions
+        WHERE ${whereClause}
       `;
       
-      const params = [trustAccountId];
-      let paramIndex = 2;
+      const countResult = await db.query(countQuery, queryParams.slice(0, paramIndex - 1));
+      const totalCount = parseInt(countResult.rows[0].count);
       
-      if (startDate) {
-        query += ` AND tat.transaction_date >= $${paramIndex}`;
-        params.push(startDate);
-        paramIndex++;
-      }
-      
-      if (endDate) {
-        query += ` AND tat.transaction_date <= $${paramIndex}`;
-        params.push(endDate);
-        paramIndex++;
-      }
-      
-      if (transactionType) {
-        query += ` AND tat.transaction_type = $${paramIndex}`;
-        params.push(transactionType);
-        paramIndex++;
-      }
-      
-      if (!includeReconciled) {
-        query += ` AND tat.is_reconciled = false`;
-      }
-      
-      query += ` ORDER BY tat.transaction_date DESC, tat.created_at DESC`;
-      
-      const { rows } = await this.pool.query(query, params);
-      
-      return rows;
+      return {
+        transactions: result.rows,
+        pagination: {
+          total: totalCount,
+          limit,
+          offset,
+          hasMore: offset + limit < totalCount
+        }
+      };
     } catch (error) {
-      console.error('Error getting transactions:', error);
-      throw new Error('Failed to get transactions');
+      console.error('Error fetching trust account transactions:', error);
+      throw new Error('Failed to fetch trust account transactions');
     }
   }
 
   /**
-   * Get security deposit balance for a tenant
-   * 
-   * @param {number} tenantId - The ID of the tenant
-   * @returns {Promise<Object>} - Security deposit balance information
+   * Create a new transaction in the trust account
+   * @param {Object} transactionData - The transaction data
+   * @returns {Promise<Object>} - The created transaction and updated account balance
    */
-  async getSecurityDepositBalance(tenantId) {
+  async createTransaction(transactionData) {
+    // Start a database transaction to ensure atomicity
+    const client = await db.getClient();
+    
     try {
-      // Get active lease for tenant
-      const leaseQuery = `
-        SELECT 
-          l.id AS lease_id,
-          l.property_id,
-          l.unit_id,
-          u.unit_number,
-          p.name AS property_name
-        FROM leases l
-        JOIN lease_tenants lt ON l.id = lt.lease_id
-        JOIN units u ON l.unit_id = u.id
-        JOIN properties p ON l.property_id = p.id
-        WHERE lt.tenant_id = $1
-        AND l.status = 'active'
-        LIMIT 1
-      `;
+      await client.query('BEGIN');
       
-      const leaseResult = await this.pool.query(leaseQuery, [tenantId]);
+      const {
+        trust_account_id,
+        amount,
+        transaction_type,
+        category,
+        description,
+        reference_id,
+        transaction_date
+      } = transactionData;
       
-      if (leaseResult.rows.length === 0) {
-        throw new Error('No active lease found for tenant');
-      }
-      
-      const lease = leaseResult.rows[0];
-      
-      // Get security deposit trust account for property
+      // Verify the trust account exists
       const accountQuery = `
-        SELECT id
-        FROM trust_accounts
-        WHERE property_id = $1
-        AND account_type = 'security_deposit'
-        AND is_active = true
-        LIMIT 1
+        SELECT * FROM trust_accounts
+        WHERE id = $1
+        FOR UPDATE
       `;
       
-      const accountResult = await this.pool.query(accountQuery, [lease.property_id]);
+      const accountResult = await client.query(accountQuery, [trust_account_id]);
+      const account = accountResult.rows[0];
       
-      if (accountResult.rows.length === 0) {
-        throw new Error('No security deposit trust account found for property');
+      if (!account) {
+        throw new Error('Trust account not found');
       }
       
-      const trustAccountId = accountResult.rows[0].id;
+      // Calculate new balance based on transaction type
+      let newBalance = parseFloat(account.balance);
       
-      // Get security deposit transactions for tenant
-      const transactionsQuery = `
-        SELECT 
-          transaction_type,
+      if (transaction_type === 'deposit') {
+        newBalance += parseFloat(amount);
+      } else if (transaction_type === 'withdrawal') {
+        newBalance -= parseFloat(amount);
+      } else {
+        throw new Error('Invalid transaction type');
+      }
+      
+      // Create the transaction
+      const transactionQuery = `
+        INSERT INTO trust_account_transactions (
+          trust_account_id,
           amount,
+          transaction_type,
+          category,
+          description,
+          reference_id,
           transaction_date,
-          description
-        FROM trust_account_transactions
-        WHERE trust_account_id = $1
-        AND tenant_id = $2
-        ORDER BY transaction_date, created_at
+          balance_after
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *
       `;
       
-      const transactionsResult = await this.pool.query(transactionsQuery, [trustAccountId, tenantId]);
-      const transactions = transactionsResult.rows;
+      const transactionValues = [
+        trust_account_id,
+        amount,
+        transaction_type,
+        category,
+        description,
+        reference_id,
+        transaction_date || new Date(),
+        newBalance
+      ];
       
-      // Calculate balance
-      let balance = 0;
+      const transactionResult = await client.query(transactionQuery, transactionValues);
       
-      for (const transaction of transactions) {
-        if (transaction.transaction_type === 'deposit' || transaction.transaction_type === 'interest') {
-          balance += parseFloat(transaction.amount);
-        } else if (transaction.transaction_type === 'withdrawal' || transaction.transaction_type === 'fee') {
-          balance -= parseFloat(transaction.amount);
-        }
-      }
+      // Update the account balance
+      const updateQuery = `
+        UPDATE trust_accounts
+        SET balance = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+      `;
       
-      // Get tenant details
-      const tenantQuery = `
-        SELECT first_name, last_name, email, phone
-        FROM tenants
+      const updateResult = await client.query(updateQuery, [newBalance, trust_account_id]);
+      
+      await client.query('COMMIT');
+      
+      return {
+        transaction: transactionResult.rows[0],
+        account: updateResult.rows[0]
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating trust account transaction:', error);
+      throw new Error(`Failed to create trust account transaction: ${error.message}`);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get account balance and summary for a trust account
+   * @param {number} accountId - The ID of the trust account
+   * @returns {Promise<Object>} - Account balance and summary
+   */
+  async getAccountSummary(accountId) {
+    try {
+      // Get account details
+      const accountQuery = `
+        SELECT * FROM trust_accounts
         WHERE id = $1
       `;
       
-      const tenantResult = await this.pool.query(tenantQuery, [tenantId]);
-      
-      if (tenantResult.rows.length === 0) {
-        throw new Error('Tenant not found');
-      }
-      
-      const tenant = tenantResult.rows[0];
-      
-      return {
-        tenantId,
-        tenantName: `${tenant.first_name} ${tenant.last_name}`,
-        tenantEmail: tenant.email,
-        tenantPhone: tenant.phone,
-        leaseId: lease.lease_id,
-        propertyId: lease.property_id,
-        propertyName: lease.property_name,
-        unitId: lease.unit_id,
-        unitNumber: lease.unit_number,
-        trustAccountId,
-        balance,
-        transactions
-      };
-    } catch (error) {
-      console.error('Error getting security deposit balance:', error);
-      throw new Error(`Failed to get security deposit balance: ${error.message}`);
-    }
-  }
-
-  /**
-   * Reconcile trust account transactions
-   * 
-   * @param {number} trustAccountId - The ID of the trust account
-   * @param {Array} transactionIds - Array of transaction IDs to reconcile
-   * @param {Date} reconciliationDate - The reconciliation date
-   * @param {number} userId - The ID of the user performing the reconciliation
-   * @returns {Promise<Object>} - Reconciliation results
-   */
-  async reconcileTransactions(trustAccountId, transactionIds, reconciliationDate, userId) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
-      
-      const accountResult = await client.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
-      // Update transactions
-      const updateQuery = `
-        UPDATE trust_account_transactions
-        SET 
-          is_reconciled = true,
-          reconciled_date = $1,
-          reconciled_by = $2,
-          updated_at = NOW()
-        WHERE id = ANY($3)
-        AND trust_account_id = $4
-        AND is_reconciled = false
-        RETURNING *
-      `;
-      
-      const updateResult = await client.query(updateQuery, [
-        reconciliationDate,
-        userId,
-        transactionIds,
-        trustAccountId
-      ]);
-      
-      const reconciledTransactions = updateResult.rows;
-      
-      await client.query('COMMIT');
-      
-      return {
-        trustAccountId,
-        reconciledCount: reconciledTransactions.length,
-        reconciliationDate,
-        reconciledTransactions
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error reconciling transactions:', error);
-      throw new Error(`Failed to reconcile transactions: ${error.message}`);
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Generate trust account statement
-   * 
-   * @param {number} trustAccountId - The ID of the trust account
-   * @param {Object} options - Optional parameters
-   * @param {Date} options.startDate - Start date for the statement (default: first day of current month)
-   * @param {Date} options.endDate - End date for the statement (default: last day of current month)
-   * @param {string} options.format - The statement format ('json', 'csv', 'pdf')
-   * @returns {Promise<Object>} - The generated statement
-   */
-  async generateStatement(trustAccountId, options = {}) {
-    try {
-      // Set default options
-      const defaultOptions = {
-        startDate: moment().startOf('month').toDate(),
-        endDate: moment().endOf('month').toDate(),
-        format: 'json'
-      };
-      
-      const opts = { ...defaultOptions, ...options };
-      
-      // Get trust account
-      const accountQuery = `
-        SELECT 
-          ta.*,
-          p.name AS property_name,
-          p.address AS property_address,
-          p.city AS property_city,
-          p.state AS property_state,
-          p.zip_code AS property_zip
-        FROM trust_accounts ta
-        JOIN properties p ON ta.property_id = p.id
-        WHERE ta.id = $1
-      `;
-      
-      const accountResult = await this.pool.query(accountQuery, [trustAccountId]);
-      
-      if (accountResult.rows.length === 0) {
-        throw new Error('Trust account not found');
-      }
-      
+      const accountResult = await db.query(accountQuery, [accountId]);
       const account = accountResult.rows[0];
       
-      // Get opening balance (balance at start date - 1 day)
-      const openingBalanceDate = moment(opts.startDate).subtract(1, 'day').format('YYYY-MM-DD');
+      if (!account) {
+        throw new Error('Trust account not found');
+      }
       
-      const openingBalanceQuery = `
+      // Get transaction summary
+      const summaryQuery = `
         SELECT 
-          COALESCE(
-            SUM(
-              CASE 
-                WHEN transaction_type IN ('deposit', 'interest') THEN amount 
-                WHEN transaction_type IN ('withdrawal', 'fee') THEN -amount
-                ELSE 0
-              END
-            ),
-            0
-          ) AS opening_balance
+          transaction_type,
+          SUM(amount) as total_amount,
+          COUNT(*) as transaction_count
         FROM trust_account_transactions
         WHERE trust_account_id = $1
-        AND transaction_date <= $2
+        GROUP BY transaction_type
       `;
       
-      const openingBalanceResult = await this.pool.query(openingBalanceQuery, [trustAccountId, openingBalanceDate]);
-      const openingBalance = parseFloat(openingBalanceResult.rows[0].opening_balance);
+      const summaryResult = await db.query(summaryQuery, [accountId]);
       
-      // Get transactions for the period
-      const transactionsQuery = `
+      // Get recent transactions
+      const recentQuery = `
+        SELECT * FROM trust_account_transactions
+        WHERE trust_account_id = $1
+        ORDER BY transaction_date DESC, created_at DESC
+        LIMIT 5
+      `;
+      
+      const recentResult = await db.query(recentQuery, [accountId]);
+      
+      // Calculate monthly totals
+      const monthlyQuery = `
         SELECT 
-          tat.*,
-          CONCAT(t.first_name, ' ', t.last_name) AS tenant_name,
-          CONCAT(cu.first_name, ' ', cu.last_name) AS created_by_name,
-          CONCAT(ru.first_name, ' ', ru.last_name) AS reconciled_by_name
-        FROM trust_account_transactions tat
-        LEFT JOIN tenants t ON tat.tenant_id = t.id
-        LEFT JOIN users cu ON tat.created_by = cu.id
-        LEFT JOIN users ru ON tat.reconciled_by = ru.id
-        WHERE tat.trust_account_id = $1
-        AND tat.transaction_date >= $2
-        AND tat.transaction_date <= $3
-        ORDER BY tat.transaction_date, tat.created_at
+          DATE_TRUNC('month', transaction_date) as month,
+          transaction_type,
+          SUM(amount) as total_amount
+        FROM trust_account_transactions
+        WHERE trust_account_id = $1
+        AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '6 months')
+        GROUP BY DATE_TRUNC('month', transaction_date), transaction_type
+        ORDER BY month DESC
       `;
       
-      const transactionsResult = await this.pool.query(transactionsQuery, [
-        trustAccountId,
-        opts.startDate,
-        opts.endDate
-      ]);
+      const monthlyResult = await db.query(monthlyQuery, [accountId]);
       
-      const transactions = transactionsResult.rows;
+      // Process monthly data into a more usable format
+      const monthlyTotals = {};
       
-      // Calculate running balance
-      let runningBalance = openingBalance;
-      const transactionsWithBalance = transactions.map(transaction => {
-        if (transaction.transaction_type === 'deposit' || transaction.transaction_type === 'interest') {
-          runningBalance += parseFloat(transaction.amount);
-        } else if (transaction.transaction_type === 'withdrawal' || transaction.transaction_type === 'fee') {
-          runningBalance -= parseFloat(transaction.amount);
+      monthlyResult.rows.forEach(row => {
+        const monthKey = row.month.toISOString().substring(0, 7); // YYYY-MM format
+        
+        if (!monthlyTotals[monthKey]) {
+          monthlyTotals[monthKey] = {
+            month: monthKey,
+            deposits: 0,
+            withdrawals: 0
+          };
         }
         
-        return {
-          ...transaction,
-          running_balance: runningBalance
-        };
+        if (row.transaction_type === 'deposit') {
+          monthlyTotals[monthKey].deposits = parseFloat(row.total_amount);
+        } else if (row.transaction_type === 'withdrawal') {
+          monthlyTotals[monthKey].withdrawals = parseFloat(row.total_amount);
+        }
       });
       
-      // Calculate summary statistics
-      const totalDeposits = transactions
-        .filter(t => t.transaction_type === 'deposit')
-        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-      
-      const totalWithdrawals = transactions
-        .filter(t => t.transaction_type === 'withdrawal')
-        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-      
-      const totalInterest = transactions
-        .filter(t => t.transaction_type === 'interest')
-        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-      
-      const totalFees = transactions
-        .filter(t => t.transaction_type === 'fee')
-        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
-      
-      // Group by tenant if security deposit account
-      let tenantSummaries = null;
-      
-      if (account.account_type === 'security_deposit') {
-        const tenantTransactions = {};
-        
-        for (const transaction of transactions) {
-          if (transaction.tenant_id) {
-            if (!tenantTransactions[transaction.tenant_id]) {
-              tenantTransactions[transaction.tenant_id] = {
-                tenantId: transaction.tenant_id,
-                tenantName: transaction.tenant_name,
-                transactions: [],
-                deposits: 0,
-                withdrawals: 0,
-                interest: 0,
-                fees: 0,
-                balance: 0
-              };
-            }
-            
-            tenantTransactions[transaction.tenant_id].transactions.push(transaction);
-            
-            if (transaction.transaction_type === 'deposit') {
-              tenantTransactions[transaction.tenant_id].deposits += parseFloat(transaction.amount);
-              tenantTransactions[transaction.tenant_id].balance += parseFloat(transaction.amount);
-            } else if (transaction.transaction_type === 'withdrawal') {
-              tenantTransactions[transaction.tenant_id].withdrawals += parseFloat(transaction.amount);
-              tenantTransactions[transaction.tenant_id].balance -= parseFloat(transaction.amount);
-            } else if (transaction.transaction_type === 'interest') {
-              tenantTransactions[transaction.tenant_id].interest += parseFloat(transaction.amount);
-              tenantTransactions[transaction.tenant_id].balance += parseFloat(transaction.amount);
-            } else if (transaction.transaction_type === 'fee') {
-              tenantTransactions[transaction.tenant_id].fees += parseFloat(transaction.amount);
-              tenantTransactions[transaction.tenant_id].balance -= parseFloat(transaction.amount);
-            }
-          }
-        }
-        
-        tenantSummaries = Object.values(tenantTransactions);
-      }
-      
-      // Construct the statement
-      const statement = {
-        account: {
-          id: account.id,
-          name: account.account_name,
-          type: account.account_type,
-          accountNumber: account.account_number,
-          bankName: account.bank_name,
-          isInterestBearing: account.is_interest_bearing,
-          interestRate: account.interest_rate
-        },
-        property: {
-          id: account.property_id,
-          name: account.property_name,
-          address: account.property_address,
-          city: account.property_city,
-          state: account.property_state,
-          zipCode: account.property_zip
-        },
-        statementPeriod: {
-          startDate: opts.startDate,
-          endDate: opts.endDate
-        },
-        summary: {
-          openingBalance,
-          closingBalance: runningBalance,
-          totalDeposits,
-          totalWithdrawals,
-          totalInterest,
-          totalFees,
-          netChange: runningBalance - openingBalance
-        },
-        tenantSummaries,
-        transactions: transactionsWithBalance
+      return {
+        account,
+        summary: summaryResult.rows,
+        recentTransactions: recentResult.rows,
+        monthlyTotals: Object.values(monthlyTotals)
       };
-      
-      // Format the statement based on the requested format
-      if (opts.format === 'json') {
-        return statement;
-      } else if (opts.format === 'csv') {
-        // Generate CSV format
-        const header = 'Date,Type,Description,Amount,Balance,Tenant,Reference,Reconciled\n';
-        const rows = transactionsWithBalance.map(transaction => {
-          return [
-            moment(transaction.transaction_date).format('MM/DD/YYYY'),
-            transaction.transaction_type,
-            transaction.description,
-            transaction.transaction_type === 'withdrawal' || transaction.transaction_type === 'fee' ? 
-              `-${transaction.amount}` : transaction.amount,
-            transaction.running_balance,
-            transaction.tenant_name || '',
-            transaction.reference_number || '',
-            transaction.is_reconciled ? 'Yes' : 'No'
-          ].join(',');
-        }).join('\n');
-        
-        return {
-          content: header + rows,
-          filename: `trust_account_statement_${account.account_name.replace(/\s+/g, '_').toLowerCase()}_${moment(opts.startDate).format('YYYY-MM-DD')}_${moment(opts.endDate).format('YYYY-MM-DD')}.csv`,
-          contentType: 'text/csv'
-        };
-      } else if (opts.format === 'pdf') {
-        // For PDF generation, we would typically use a library like PDFKit
-        // This is a placeholder for the actual implementation
-        return {
-          message: 'PDF generation would be implemented here',
-          statement
-        };
-      } else {
-        throw new Error('Unsupported statement format');
-      }
     } catch (error) {
-      console.error('Error generating trust account statement:', error);
-      throw new Error(`Failed to generate trust account statement: ${error.message}`);
-    }
-  }
-
-  /**
-   * Calculate and apply interest to interest-bearing trust accounts
-   * 
-   * @param {Date} asOfDate - The date to calculate interest as of
-   * @param {number} userId - The ID of the user applying the interest
-   * @returns {Promise<Object>} - Interest application results
-   */
-  async calculateAndApplyInterest(asOfDate = new Date(), userId) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Get all interest-bearing trust accounts
-      const accountsQuery = `
-        SELECT * FROM trust_accounts
-        WHERE is_interest_bearing = true
-        AND is_active = true
-      `;
-      
-      const accountsResult = await client.query(accountsQuery);
-      const accounts = accountsResult.rows;
-      
-      const results = {
-        totalAccounts: accounts.length,
-        totalInterestApplied: 0,
-        accountResults: []
-      };
-      
-      // Process each account
-      for (const account of accounts) {
-        try {
-          // Check if interest has already been applied for the current month
-          const currentMonth = moment(asOfDate).format('YYYY-MM');
-          
-          const existingInterestQuery = `
-            SELECT COUNT(*) AS count
-            FROM trust_account_transactions
-            WHERE trust_account_id = $1
-            AND transaction_type = 'interest'
-            AND TO_CHAR(transaction_date, 'YYYY-MM') = $2
-          `;
-          
-          const existingInterestResult = await client.query(existingInterestQuery, [
-            account.id,
-            currentMonth
-          ]);
-          
-          if (parseInt(existingInterestResult.rows[0].count) > 0) {
-            results.accountResults.push({
-              accountId: account.id,
-              accountName: account.account_name,
-              interestApplied: 0,
-              message: 'Interest already applied for this month'
-            });
-            continue;
-          }
-          
-          // Calculate average daily balance for the month
-          const startOfMonth = moment(asOfDate).startOf('month').format('YYYY-MM-DD');
-          const endOfMonth = moment(asOfDate).endOf('month').format('YYYY-MM-DD');
-          const daysInMonth = moment(asOfDate).daysInMonth();
-          
-          // Get all transactions for the month
-          const transactionsQuery = `
-            SELECT *
-            FROM trust_account_transactions
-            WHERE trust_account_id = $1
-            AND transaction_date <= $2
-            ORDER BY transaction_date, created_at
-          `;
-          
-          const transactionsResult = await client.query(transactionsQuery, [account.id, endOfMonth]);
-          const transactions = transactionsResult.rows;
-          
-          // Calculate balance at the start of the month
-          let balance = 0;
-          
-          for (const transaction of transactions) {
-            if (moment(transaction.transaction_date).isBefore(startOfMonth)) {
-              if (transaction.transaction_type === 'deposit' || transaction.transaction_type === 'interest') {
-                balance += parseFloat(transaction.amount);
-              } else if (transaction.transaction_type === 'withdrawal' || transaction.transaction_type === 'fee') {
-                balance -= parseFloat(transaction.amount);
-              }
-            }
-          }
-          
-          // Calculate daily balances and sum for average
-          const dailyBalances = {};
-          let currentDate = moment(startOfMonth);
-          let currentBalance = balance;
-          
-          while (currentDate.isSameOrBefore(moment(asOfDate))) {
-            const dateStr = currentDate.format('YYYY-MM-DD');
-            
-            // Apply transactions for this date
-            for (const transaction of transactions) {
-              if (moment(transaction.transaction_date).format('YYYY-MM-DD') === dateStr) {
-                if (transaction.transaction_type === 'deposit' || transaction.transaction_type === 'interest') {
-                  currentBalance += parseFloat(transaction.amount);
-                } else if (transaction.transaction_type === 'withdrawal' || transaction.transaction_type === 'fee') {
-                  currentBalance -= parseFloat(transaction.amount);
-                }
-              }
-            }
-            
-            dailyBalances[dateStr] = currentBalance;
-            currentDate.add(1, 'day');
-          }
-          
-          // Calculate average daily balance
-          const totalDailyBalance = Object.values(dailyBalances).reduce((sum, balance) => sum + balance, 0);
-          const daysElapsed = Object.keys(dailyBalances).length;
-          const averageDailyBalance = totalDailyBalance / daysElapsed;
-          
-          // Calculate interest (annual rate / 12 months * average daily balance)
-          const monthlyInterestRate = parseFloat(account.interest_rate) / 100 / 12;
-          const interestAmount = averageDailyBalance * monthlyInterestRate;
-          
-          // Round to 2 decimal places
-          const roundedInterestAmount = Math.round(interestAmount * 100) / 100;
-          
-          // Skip if interest amount is zero
-          if (roundedInterestAmount <= 0) {
-            results.accountResults.push({
-              accountId: account.id,
-              accountName: account.account_name,
-              interestApplied: 0,
-              message: 'Calculated interest amount is zero or negative'
-            });
-            continue;
-          }
-          
-          // Record the interest
-          const description = `Monthly interest at ${account.interest_rate}% APR for ${moment(asOfDate).format('MMMM YYYY')}`;
-          
-          const insertQuery = `
-            INSERT INTO trust_account_transactions (
-              trust_account_id,
-              transaction_type,
-              amount,
-              transaction_date,
-              description,
-              is_reconciled,
-              created_by,
-              created_at,
-              updated_at
-            )
-            VALUES ($1, 'interest', $2, $3, $4, false, $5, NOW(), NOW())
-            RETURNING *
-          `;
-          
-          const insertValues = [
-            account.id,
-            roundedInterestAmount,
-            asOfDate,
-            description,
-            userId
-          ];
-          
-          const insertResult = await client.query(insertQuery, insertValues);
-          const interestTransaction = insertResult.rows[0];
-          
-          results.totalInterestApplied += roundedInterestAmount;
-          results.accountResults.push({
-            accountId: account.id,
-            accountName: account.account_name,
-            interestApplied: roundedInterestAmount,
-            averageDailyBalance,
-            monthlyInterestRate,
-            transactionId: interestTransaction.id
-          });
-        } catch (error) {
-          console.error(`Error applying interest to account ${account.id}:`, error);
-          results.accountResults.push({
-            accountId: account.id,
-            accountName: account.account_name,
-            error: error.message
-          });
-        }
-      }
-      
-      await client.query('COMMIT');
-      
-      return results;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error calculating and applying interest:', error);
-      throw new Error(`Failed to calculate and apply interest: ${error.message}`);
-    } finally {
-      client.release();
+      console.error('Error getting trust account summary:', error);
+      throw new Error('Failed to get trust account summary');
     }
   }
 
   /**
    * Transfer funds between trust accounts
-   * 
-   * @param {Object} transferData - Transfer data
-   * @param {number} transferData.fromAccountId - The ID of the source trust account
-   * @param {number} transferData.toAccountId - The ID of the destination trust account
-   * @param {number} transferData.amount - The transfer amount
-   * @param {Date} transferData.transactionDate - The transaction date
-   * @param {string} transferData.description - Description of the transfer
-   * @param {string} transferData.referenceNumber - Reference number (optional)
-   * @param {number} transferData.userId - The ID of the user recording the transfer
-   * @returns {Promise<Object>} - The transfer results
+   * @param {Object} transferData - The transfer data
+   * @returns {Promise<Object>} - The created transactions and updated accounts
    */
-  async transferFunds(transferData) {
-    const client = await this.pool.connect();
+  async transferBetweenAccounts(transferData) {
+    // Start a database transaction to ensure atomicity
+    const client = await db.getClient();
     
     try {
       await client.query('BEGIN');
       
       const {
-        fromAccountId,
-        toAccountId,
+        from_account_id,
+        to_account_id,
         amount,
-        transactionDate = new Date(),
         description,
-        referenceNumber = null,
-        userId
+        reference_id,
+        transaction_date
       } = transferData;
       
-      // Validate amount
-      if (amount <= 0) {
-        throw new Error('Transfer amount must be greater than zero');
+      if (from_account_id === to_account_id) {
+        throw new Error('Cannot transfer to the same account');
       }
       
-      // Validate accounts
-      if (fromAccountId === toAccountId) {
-        throw new Error('Source and destination accounts cannot be the same');
-      }
-      
-      // Get source account
-      const sourceAccountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
+      // Verify both accounts exist
+      const accountsQuery = `
+        SELECT id, balance FROM trust_accounts
+        WHERE id IN ($1, $2)
+        FOR UPDATE
       `;
       
-      const sourceAccountResult = await client.query(sourceAccountQuery, [fromAccountId]);
+      const accountsResult = await client.query(accountsQuery, [from_account_id, to_account_id]);
       
-      if (sourceAccountResult.rows.length === 0) {
-        throw new Error('Source trust account not found');
+      if (accountsResult.rows.length !== 2) {
+        throw new Error('One or both trust accounts not found');
       }
       
-      const sourceAccount = sourceAccountResult.rows[0];
+      const accounts = {};
+      accountsResult.rows.forEach(row => {
+        accounts[row.id] = row;
+      });
       
-      // Get destination account
-      const destAccountQuery = `
-        SELECT * FROM trust_accounts WHERE id = $1
-      `;
+      const fromAccount = accounts[from_account_id];
+      const toAccount = accounts[to_account_id];
       
-      const destAccountResult = await client.query(destAccountQuery, [toAccountId]);
-      
-      if (destAccountResult.rows.length === 0) {
-        throw new Error('Destination trust account not found');
+      // Check sufficient balance
+      if (parseFloat(fromAccount.balance) < parseFloat(amount)) {
+        throw new Error('Insufficient funds for transfer');
       }
       
-      const destAccount = destAccountResult.rows[0];
-      
-      // Check if sufficient funds are available
-      if (parseFloat(sourceAccount.balance) < amount) {
-        throw new Error('Insufficient funds in source trust account');
-      }
-      
-      // Record withdrawal from source account
+      // Create withdrawal transaction
       const withdrawalQuery = `
         INSERT INTO trust_account_transactions (
           trust_account_id,
-          transaction_type,
           amount,
-          transaction_date,
+          transaction_type,
+          category,
           description,
-          reference_number,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
+          reference_id,
+          transaction_date,
+          related_account_id,
+          balance_after
         )
-        VALUES ($1, 'withdrawal', $2, $3, $4, $5, false, $6, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
       `;
       
-      const withdrawalDescription = `${description} (Transfer to ${destAccount.account_name})`;
+      const newFromBalance = parseFloat(fromAccount.balance) - parseFloat(amount);
       
       const withdrawalValues = [
-        fromAccountId,
+        from_account_id,
         amount,
-        transactionDate,
-        withdrawalDescription,
-        referenceNumber,
-        userId
+        'withdrawal',
+        'transfer',
+        description || 'Transfer to another trust account',
+        reference_id,
+        transaction_date || new Date(),
+        to_account_id,
+        newFromBalance
       ];
       
       const withdrawalResult = await client.query(withdrawalQuery, withdrawalValues);
-      const withdrawal = withdrawalResult.rows[0];
       
-      // Record deposit to destination account
+      // Create deposit transaction
       const depositQuery = `
         INSERT INTO trust_account_transactions (
           trust_account_id,
-          transaction_type,
           amount,
-          transaction_date,
+          transaction_type,
+          category,
           description,
-          reference_number,
-          is_reconciled,
-          created_by,
-          created_at,
-          updated_at
+          reference_id,
+          transaction_date,
+          related_account_id,
+          balance_after
         )
-        VALUES ($1, 'deposit', $2, $3, $4, $5, false, $6, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
       `;
       
-      const depositDescription = `${description} (Transfer from ${sourceAccount.account_name})`;
+      const newToBalance = parseFloat(toAccount.balance) + parseFloat(amount);
       
       const depositValues = [
-        toAccountId,
+        to_account_id,
         amount,
-        transactionDate,
-        depositDescription,
-        referenceNumber,
-        userId
+        'deposit',
+        'transfer',
+        description || 'Transfer from another trust account',
+        reference_id,
+        transaction_date || new Date(),
+        from_account_id,
+        newToBalance
       ];
       
       const depositResult = await client.query(depositQuery, depositValues);
-      const deposit = depositResult.rows[0];
+      
+      // Update account balances
+      const updateFromQuery = `
+        UPDATE trust_accounts
+        SET balance = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+      `;
+      
+      const updateToQuery = `
+        UPDATE trust_accounts
+        SET balance = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING *
+      `;
+      
+      const updateFromResult = await client.query(updateFromQuery, [newFromBalance, from_account_id]);
+      const updateToResult = await client.query(updateToQuery, [newToBalance, to_account_id]);
       
       await client.query('COMMIT');
       
       return {
-        fromAccount: {
-          id: sourceAccount.id,
-          name: sourceAccount.account_name,
-          type: sourceAccount.account_type,
-          previousBalance: parseFloat(sourceAccount.balance),
-          newBalance: parseFloat(sourceAccount.balance) - amount
-        },
-        toAccount: {
-          id: destAccount.id,
-          name: destAccount.account_name,
-          type: destAccount.account_type,
-          previousBalance: parseFloat(destAccount.balance),
-          newBalance: parseFloat(destAccount.balance) + amount
-        },
-        amount,
-        transactionDate,
-        description,
-        referenceNumber,
-        withdrawalTransaction: withdrawal,
-        depositTransaction: deposit
+        withdrawal: withdrawalResult.rows[0],
+        deposit: depositResult.rows[0],
+        fromAccount: updateFromResult.rows[0],
+        toAccount: updateToResult.rows[0]
       };
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error('Error transferring funds:', error);
-      throw new Error(`Failed to transfer funds: ${error.message}`);
+      console.error('Error transferring between trust accounts:', error);
+      throw new Error(`Failed to transfer between trust accounts: ${error.message}`);
     } finally {
       client.release();
-    }
-  }
-
-  /**
-   * Generate trust account audit report
-   * 
-   * @param {number} propertyId - The ID of the property
-   * @param {Object} options - Optional parameters
-   * @param {Date} options.startDate - Start date for the report (default: first day of current year)
-   * @param {Date} options.endDate - End date for the report (default: current date)
-   * @returns {Promise<Object>} - The generated audit report
-   */
-  async generateAuditReport(propertyId, options = {}) {
-    try {
-      // Set default options
-      const defaultOptions = {
-        startDate: moment().startOf('year').toDate(),
-        endDate: new Date()
-      };
-      
-      const opts = { ...defaultOptions, ...options };
-      
-      // Get property details
-      const propertyQuery = `
-        SELECT id, name, address, city, state, zip_code
-        FROM properties
-        WHERE id = $1
-      `;
-      
-      const propertyResult = await this.pool.query(propertyQuery, [propertyId]);
-      
-      if (propertyResult.rows.length === 0) {
-        throw new Error('Property not found');
-      }
-      
-      const property = propertyResult.rows[0];
-      
-      // Get all trust accounts for the property
-      const accountsQuery = `
-        SELECT * FROM trust_accounts
-        WHERE property_id = $1
-        ORDER BY account_type, created_at
-      `;
-      
-      const accountsResult = await this.pool.query(accountsQuery, [propertyId]);
-      const accounts = accountsResult.rows;
-      
-      if (accounts.length === 0) {
-        throw new Error('No trust accounts found for property');
-      }
-      
-      // Get all transactions for the period
-      const transactionsQuery = `
-        SELECT 
-          tat.*,
-          ta.account_name,
-          ta.account_type,
-          CONCAT(t.first_name, ' ', t.last_name) AS tenant_name,
-          CONCAT(cu.first_name, ' ', cu.last_name) AS created_by_name,
-          CONCAT(ru.first_name, ' ', ru.last_name) AS reconciled_by_name
-        FROM trust_account_transactions tat
-        JOIN trust_accounts ta ON tat.trust_account_id = ta.id
-        LEFT JOIN tenants t ON tat.tenant_id = t.id
-        LEFT JOIN users cu ON tat.created_by = cu.id
-        LEFT JOIN users ru ON tat.reconciled_by = ru.id
-        WHERE ta.property_id = $1
-        AND tat.transaction_date >= $2
-        AND tat.transaction_date <= $3
-        ORDER BY tat.transaction_date, tat.created_at
-      `;
-      
-      const transactionsResult = await this.pool.query(transactionsQuery, [
-        propertyId,
-        opts.startDate,
-        opts.endDate
-      ]);
-      
-      const transactions = transactionsResult.rows;
-      
-      // Group transactions by account
-      const accountTransactions = {};
-      
-      for (const account of accounts) {
-        accountTransactions[account.id] = {
-          account,
-          transactions: [],
-          summary: {
-            deposits: 0,
-            withdrawals: 0,
-            interest: 0,
-            fees: 0,
-            netChange: 0
-          }
-        };
-      }
-      
-      for (const transaction of transactions) {
-        if (accountTransactions[transaction.trust_account_id]) {
-          accountTransactions[transaction.trust_account_id].transactions.push(transaction);
-          
-          if (transaction.transaction_type === 'deposit') {
-            accountTransactions[transaction.trust_account_id].summary.deposits += parseFloat(transaction.amount);
-            accountTransactions[transaction.trust_account_id].summary.netChange += parseFloat(transaction.amount);
-          } else if (transaction.transaction_type === 'withdrawal') {
-            accountTransactions[transaction.trust_account_id].summary.withdrawals += parseFloat(transaction.amount);
-            accountTransactions[transaction.trust_account_id].summary.netChange -= parseFloat(transaction.amount);
-          } else if (transaction.transaction_type === 'interest') {
-            accountTransactions[transaction.trust_account_id].summary.interest += parseFloat(transaction.amount);
-            accountTransactions[transaction.trust_account_id].summary.netChange += parseFloat(transaction.amount);
-          } else if (transaction.transaction_type === 'fee') {
-            accountTransactions[transaction.trust_account_id].summary.fees += parseFloat(transaction.amount);
-            accountTransactions[transaction.trust_account_id].summary.netChange -= parseFloat(transaction.amount);
-          }
-        }
-      }
-      
-      // Calculate overall summary
-      const overallSummary = {
-        totalAccounts: accounts.length,
-        totalTransactions: transactions.length,
-        totalDeposits: 0,
-        totalWithdrawals: 0,
-        totalInterest: 0,
-        totalFees: 0,
-        netChange: 0,
-        currentBalance: 0
-      };
-      
-      for (const accountId in accountTransactions) {
-        const accountSummary = accountTransactions[accountId].summary;
-        overallSummary.totalDeposits += accountSummary.deposits;
-        overallSummary.totalWithdrawals += accountSummary.withdrawals;
-        overallSummary.totalInterest += accountSummary.interest;
-        overallSummary.totalFees += accountSummary.fees;
-        overallSummary.netChange += accountSummary.netChange;
-        overallSummary.currentBalance += parseFloat(accountTransactions[accountId].account.balance);
-      }
-      
-      // Check for unreconciled transactions
-      const unreconciledTransactions = transactions.filter(t => !t.is_reconciled);
-      
-      // Check for security deposit compliance
-      let securityDepositCompliance = null;
-      
-      const securityDepositAccount = accounts.find(a => a.account_type === 'security_deposit');
-      
-      if (securityDepositAccount) {
-        // Get all active leases with security deposits
-        const leasesQuery = `
-          SELECT 
-            l.id,
-            l.unit_id,
-            l.security_deposit_amount,
-            u.unit_number,
-            CONCAT(t.first_name, ' ', t.last_name) AS tenant_name
-          FROM leases l
-          JOIN units u ON l.unit_id = u.id
-          JOIN lease_tenants lt ON l.id = lt.lease_id
-          JOIN tenants t ON lt.tenant_id = t.id
-          WHERE l.property_id = $1
-          AND l.status = 'active'
-          AND l.security_deposit_amount > 0
-          AND lt.is_primary = true
-        `;
-        
-        const leasesResult = await this.pool.query(leasesQuery, [propertyId]);
-        const leases = leasesResult.rows;
-        
-        // Calculate total security deposits required
-        const totalSecurityDepositsRequired = leases.reduce(
-          (sum, lease) => sum + parseFloat(lease.security_deposit_amount),
-          0
-        );
-        
-        // Check if security deposit account balance is sufficient
-        const isCompliant = parseFloat(securityDepositAccount.balance) >= totalSecurityDepositsRequired;
-        
-        securityDepositCompliance = {
-          isCompliant,
-          totalSecurityDepositsRequired,
-          accountBalance: parseFloat(securityDepositAccount.balance),
-          difference: parseFloat(securityDepositAccount.balance) - totalSecurityDepositsRequired,
-          leases
-        };
-      }
-      
-      // Construct the audit report
-      const auditReport = {
-        property,
-        reportPeriod: {
-          startDate: opts.startDate,
-          endDate: opts.endDate
-        },
-        overallSummary,
-        accounts: Object.values(accountTransactions),
-        unreconciledTransactions: unreconciledTransactions.length > 0 ? unreconciledTransactions : null,
-        securityDepositCompliance
-      };
-      
-      return auditReport;
-    } catch (error) {
-      console.error('Error generating trust account audit report:', error);
-      throw new Error(`Failed to generate trust account audit report: ${error.message}`);
     }
   }
 }

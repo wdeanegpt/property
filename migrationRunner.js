@@ -1,164 +1,263 @@
 /**
  * migrationRunner.js
- * 
- * This script runs database migrations for the Advanced Accounting Module
- * in the correct order. It tracks applied migrations and only applies
- * new migrations that haven't been run yet.
- * 
- * Usage: node migrationRunner.js [--dry-run] [--force]
+ * Utility for running database migrations
  */
 
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const config = require('../config/database');
+const db = require('../config/database');
 
-// Command line arguments
-const args = process.argv.slice(2);
-const isDryRun = args.includes('--dry-run');
-const isForce = args.includes('--force');
-
-// Migration directory
-const MIGRATION_DIR = path.join(__dirname, '../../database/migrations');
-
-// Main function
-async function runMigrations() {
-  console.log('Database Migration Runner');
-  console.log('========================');
-  
-  if (isDryRun) {
-    console.log('Running in dry-run mode. No changes will be applied.');
+class MigrationRunner {
+  /**
+   * Constructor
+   * @param {Object} options - Migration options
+   */
+  constructor(options = {}) {
+    this.migrationsPath = options.migrationsPath || path.resolve(__dirname, '../../../database/migrations');
+    this.tableName = options.tableName || 'migrations';
+    this.pool = db.pool();
   }
-  
-  if (isForce) {
-    console.log('Running in force mode. All migrations will be re-applied.');
-  }
-  
-  const pool = new Pool(config.postgres);
-  const client = await pool.connect();
-  
-  try {
-    // Ensure migrations table exists
-    await ensureMigrationsTable(client);
-    
-    // Get applied migrations
-    const appliedMigrations = await getAppliedMigrations(client);
-    console.log(`Found ${appliedMigrations.length} previously applied migrations.`);
-    
-    // Get migration files
-    const migrationFiles = getMigrationFiles();
-    console.log(`Found ${migrationFiles.length} migration files.`);
-    
-    // Determine which migrations to apply
-    const migrationsToApply = isForce 
-      ? migrationFiles 
-      : migrationFiles.filter(file => !appliedMigrations.includes(file));
-    
-    console.log(`Applying ${migrationsToApply.length} migrations...`);
-    
-    // Apply migrations
-    for (const migrationFile of migrationsToApply) {
-      await applyMigration(client, migrationFile);
+
+  /**
+   * Initialize migrations table if it doesn't exist
+   * @returns {Promise<void>}
+   */
+  async initMigrationsTable() {
+    const query = `
+      CREATE TABLE IF NOT EXISTS ${this.tableName} (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `;
+
+    try {
+      await this.pool.query(query);
+      console.log(`Migrations table '${this.tableName}' initialized`);
+    } catch (error) {
+      console.error('Error initializing migrations table:', error);
+      throw error;
     }
+  }
+
+  /**
+   * Get list of applied migrations
+   * @returns {Promise<Array>} - List of applied migrations
+   */
+  async getAppliedMigrations() {
+    const query = `SELECT name FROM ${this.tableName} ORDER BY id ASC;`;
     
-    console.log('Migration complete!');
-  } catch (error) {
-    console.error('Error running migrations:', error);
+    try {
+      const result = await this.pool.query(query);
+      return result.rows.map(row => row.name);
+    } catch (error) {
+      console.error('Error getting applied migrations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get list of available migration files
+   * @returns {Promise<Array>} - List of available migration files
+   */
+  async getAvailableMigrations() {
+    try {
+      const files = await fs.promises.readdir(this.migrationsPath);
+      return files
+        .filter(file => file.endsWith('.sql'))
+        .sort((a, b) => {
+          // Extract numeric prefix for proper ordering
+          const numA = parseInt(a.match(/^(\d+)/)?.[1] || '0');
+          const numB = parseInt(b.match(/^(\d+)/)?.[1] || '0');
+          return numA - numB;
+        });
+    } catch (error) {
+      console.error('Error getting available migrations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Record a migration as applied
+   * @param {string} migrationName - Name of the migration
+   * @returns {Promise<void>}
+   */
+  async recordMigration(migrationName) {
+    const query = `INSERT INTO ${this.tableName} (name) VALUES ($1);`;
+    
+    try {
+      await this.pool.query(query, [migrationName]);
+      console.log(`Recorded migration: ${migrationName}`);
+    } catch (error) {
+      console.error(`Error recording migration ${migrationName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply a single migration
+   * @param {string} migrationName - Name of the migration
+   * @returns {Promise<void>}
+   */
+  async applyMigration(migrationName) {
+    const client = await this.pool.connect();
+    
+    try {
+      const migrationPath = path.join(this.migrationsPath, migrationName);
+      const migrationSql = await fs.promises.readFile(migrationPath, 'utf8');
+      
+      console.log(`Applying migration: ${migrationName}`);
+      
+      await client.query('BEGIN');
+      await client.query(migrationSql);
+      await this.recordMigration(migrationName);
+      await client.query('COMMIT');
+      
+      console.log(`Successfully applied migration: ${migrationName}`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error(`Error applying migration ${migrationName}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Run all pending migrations
+   * @returns {Promise<Array>} - List of applied migrations
+   */
+  async runMigrations() {
+    try {
+      await this.initMigrationsTable();
+      
+      const appliedMigrations = await this.getAppliedMigrations();
+      const availableMigrations = await this.getAvailableMigrations();
+      
+      const pendingMigrations = availableMigrations.filter(
+        migration => !appliedMigrations.includes(migration)
+      );
+      
+      if (pendingMigrations.length === 0) {
+        console.log('No pending migrations to apply');
+        return [];
+      }
+      
+      console.log(`Found ${pendingMigrations.length} pending migrations`);
+      
+      const appliedList = [];
+      for (const migration of pendingMigrations) {
+        await this.applyMigration(migration);
+        appliedList.push(migration);
+      }
+      
+      console.log(`Successfully applied ${appliedList.length} migrations`);
+      return appliedList;
+    } catch (error) {
+      console.error('Error running migrations:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Rollback the last batch of migrations
+   * @param {number} steps - Number of migrations to rollback
+   * @returns {Promise<Array>} - List of rolled back migrations
+   */
+  async rollback(steps = 1) {
+    const client = await this.pool.connect();
+    
+    try {
+      // Get the last N migrations
+      const query = `
+        SELECT id, name FROM ${this.tableName}
+        ORDER BY id DESC
+        LIMIT $1;
+      `;
+      
+      const result = await client.query(query, [steps]);
+      const migrationsToRollback = result.rows.map(row => ({
+        id: row.id,
+        name: row.name
+      })).reverse();
+      
+      if (migrationsToRollback.length === 0) {
+        console.log('No migrations to rollback');
+        return [];
+      }
+      
+      console.log(`Rolling back ${migrationsToRollback.length} migrations`);
+      
+      const rolledBack = [];
+      await client.query('BEGIN');
+      
+      for (const migration of migrationsToRollback) {
+        const migrationPath = path.join(this.migrationsPath, migration.name);
+        const migrationSql = await fs.promises.readFile(migrationPath, 'utf8');
+        
+        // Extract the down migration if it exists (assuming format with -- Down: ... section)
+        const downMatch = migrationSql.match(/-- Down:([\s\S]*?)(?:-- (?!Down:)|$)/i);
+        
+        if (!downMatch) {
+          throw new Error(`No down migration found in ${migration.name}`);
+        }
+        
+        const downMigration = downMatch[1].trim();
+        
+        if (!downMigration) {
+          throw new Error(`Empty down migration in ${migration.name}`);
+        }
+        
+        console.log(`Rolling back migration: ${migration.name}`);
+        await client.query(downMigration);
+        
+        // Remove from migrations table
+        await client.query(`DELETE FROM ${this.tableName} WHERE id = $1`, [migration.id]);
+        
+        rolledBack.push(migration.name);
+        console.log(`Successfully rolled back migration: ${migration.name}`);
+      }
+      
+      await client.query('COMMIT');
+      console.log(`Successfully rolled back ${rolledBack.length} migrations`);
+      
+      return rolledBack;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error rolling back migrations:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+module.exports = MigrationRunner;
+
+// Command line interface
+if (require.main === module) {
+  const runner = new MigrationRunner();
+  
+  const command = process.argv[2];
+  
+  if (command === 'migrate') {
+    runner.runMigrations()
+      .then(() => process.exit(0))
+      .catch(error => {
+        console.error(error);
+        process.exit(1);
+      });
+  } else if (command === 'rollback') {
+    const steps = parseInt(process.argv[3] || '1');
+    runner.rollback(steps)
+      .then(() => process.exit(0))
+      .catch(error => {
+        console.error(error);
+        process.exit(1);
+      });
+  } else {
+    console.log('Usage: node migrationRunner.js [migrate|rollback [steps]]');
     process.exit(1);
-  } finally {
-    client.release();
-    await pool.end();
   }
 }
-
-/**
- * Ensure the migrations table exists
- * 
- * @param {Object} client - Database client
- */
-async function ensureMigrationsTable(client) {
-  console.log('Ensuring migrations table exists...');
-  
-  const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS migrations (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      applied_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-  `;
-  
-  if (!isDryRun) {
-    await client.query(createTableQuery);
-  }
-  
-  console.log('Migrations table ready.');
-}
-
-/**
- * Get list of applied migrations
- * 
- * @param {Object} client - Database client
- * @returns {Array} - List of applied migration filenames
- */
-async function getAppliedMigrations(client) {
-  const query = 'SELECT name FROM migrations ORDER BY id';
-  const result = await client.query(query);
-  return result.rows.map(row => row.name);
-}
-
-/**
- * Get list of migration files
- * 
- * @returns {Array} - List of migration filenames sorted by name
- */
-function getMigrationFiles() {
-  const files = fs.readdirSync(MIGRATION_DIR)
-    .filter(file => file.endsWith('.sql'))
-    .sort(); // Sort to ensure correct order
-  
-  return files;
-}
-
-/**
- * Apply a single migration
- * 
- * @param {Object} client - Database client
- * @param {string} migrationFile - Migration filename
- */
-async function applyMigration(client, migrationFile) {
-  console.log(`Applying migration: ${migrationFile}`);
-  
-  const migrationPath = path.join(MIGRATION_DIR, migrationFile);
-  const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-  
-  if (isDryRun) {
-    console.log('Dry run - not executing SQL:');
-    console.log(migrationSql);
-    return;
-  }
-  
-  try {
-    // Begin transaction
-    await client.query('BEGIN');
-    
-    // Run the migration
-    await client.query(migrationSql);
-    
-    // Record the migration
-    const insertQuery = 'INSERT INTO migrations (name) VALUES ($1)';
-    await client.query(insertQuery, [migrationFile]);
-    
-    // Commit transaction
-    await client.query('COMMIT');
-    
-    console.log(`Successfully applied migration: ${migrationFile}`);
-  } catch (error) {
-    // Rollback transaction on error
-    await client.query('ROLLBACK');
-    console.error(`Error applying migration ${migrationFile}:`, error);
-    throw error;
-  }
-}
-
-// Run the migrations
-runMigrations().catch(console.error);

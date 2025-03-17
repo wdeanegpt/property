@@ -1,888 +1,761 @@
-# Advanced Accounting Module - API Documentation
+# Property Management System API Documentation
 
-## Overview
-
-This document provides comprehensive documentation for the Advanced Accounting Module API endpoints. The API follows RESTful principles and uses JSON for data exchange.
+This document provides comprehensive documentation for the Property Management System API, focusing on the accounting module endpoints.
 
 ## Base URL
 
-- Development: `http://localhost:5000/api/accounting`
-- Staging: `https://staging-api.propertymanagement.com/api/accounting`
-- Production: `https://api.propertymanagement.com/api/accounting`
+All API endpoints are relative to the base URL:
+
+```
+https://api.example.com/api/v1
+```
 
 ## Authentication
 
-All API endpoints (except the health check) require authentication. Include a valid JWT token in the Authorization header:
+Authentication is required for all API endpoints. The API uses JSON Web Tokens (JWT) for authentication.
+
+### Authentication Headers
+
+Include the JWT token in the Authorization header of all requests:
 
 ```
 Authorization: Bearer <your_jwt_token>
 ```
 
-## Error Handling
+### Obtaining a Token
 
-The API returns standard HTTP status codes:
+To obtain a JWT token, send a POST request to the `/auth/login` endpoint with your credentials:
 
-- `200 OK` - Request succeeded
-- `201 Created` - Resource created successfully
-- `400 Bad Request` - Invalid request parameters
-- `401 Unauthorized` - Authentication required
-- `403 Forbidden` - Insufficient permissions
-- `404 Not Found` - Resource not found
-- `500 Internal Server Error` - Server error
+```http
+POST /auth/login
+Content-Type: application/json
 
-Error responses include a JSON object with error details:
+{
+  "email": "user@example.com",
+  "password": "your_password"
+}
+```
+
+Response:
 
 ```json
 {
-  "error": "Error type",
-  "message": "Detailed error message"
+  "status": "success",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "role": "manager"
+  }
 }
 ```
+
+## Error Handling
+
+The API returns standard HTTP status codes to indicate the success or failure of a request.
+
+### Error Response Format
+
+```json
+{
+  "status": "error",
+  "statusCode": 400,
+  "message": "Error message describing what went wrong"
+}
+```
+
+### Common Status Codes
+
+- `200 OK`: The request was successful
+- `201 Created`: The resource was successfully created
+- `400 Bad Request`: The request was malformed or invalid
+- `401 Unauthorized`: Authentication is required or failed
+- `403 Forbidden`: The authenticated user doesn't have permission
+- `404 Not Found`: The requested resource was not found
+- `500 Internal Server Error`: An unexpected error occurred on the server
+
+## Rate Limiting
+
+The API implements rate limiting to prevent abuse. The following headers are included in all responses:
+
+- `X-RateLimit-Limit`: The maximum number of requests allowed per window
+- `X-RateLimit-Remaining`: The number of requests remaining in the current window
+- `X-RateLimit-Reset`: The time when the current window resets, in UTC epoch seconds
 
 ## Endpoints
 
-### Health Check
+### Rent Tracking
 
+#### Get Recurring Payments
+
+Retrieves all recurring payments for a property.
+
+```http
+GET /rent-tracking/recurring-payments?property_id=123
 ```
-GET /health
-```
 
-Returns the health status of the Accounting Module.
+Query Parameters:
+- `property_id` (required): ID of the property
+- `is_active` (optional): Filter by active status (true/false)
+- `tenant_id` (optional): Filter by tenant ID
 
-**Response:**
+Response:
 
 ```json
 {
-  "status": "ok",
-  "module": "Advanced Accounting Module"
-}
-```
-
-### Rent Tracking Endpoints
-
-#### Get Due Payments
-
-```
-GET /payments/due
-```
-
-Returns a list of due payments for a property.
-
-**Query Parameters:**
-
-- `propertyId` (required) - ID of the property
-- `startDate` (optional) - Start date for filtering payments (YYYY-MM-DD)
-- `endDate` (optional) - End date for filtering payments (YYYY-MM-DD)
-- `status` (optional) - Filter by payment status ('all', 'pending', 'partial', 'paid', 'waived')
-
-**Response:**
-
-```json
-{
-  "payments": [
+  "status": "success",
+  "data": [
     {
       "id": 1,
-      "tenant_name": "John Doe",
-      "unit_number": "101",
-      "amount": 1000,
+      "property_id": 123,
+      "tenant_id": 456,
+      "amount": 1200.00,
+      "frequency": "monthly",
       "due_date": "2025-04-01",
-      "status": "pending",
-      "is_overdue": false,
-      "payment_type": "rent",
-      "late_fee_amount": null
-    }
-  ],
-  "total": 1
-}
-```
-
-#### Record Payment
-
-```
-POST /payments/record
-```
-
-Records a payment for a due payment.
-
-**Request Body:**
-
-```json
-{
-  "paymentId": 1,
-  "amount": 1000,
-  "paymentDate": "2025-04-01",
-  "paymentMethod": "check",
-  "referenceNumber": "12345",
-  "notes": "Monthly rent payment"
-}
-```
-
-**Response:**
-
-```json
-{
-  "id": 1,
-  "tenant_name": "John Doe",
-  "amount": 1000,
-  "status": "paid",
-  "payment_date": "2025-04-01",
-  "payment_method": "check",
-  "reference_number": "12345"
-}
-```
-
-#### Get Payment Status
-
-```
-GET /payments/status/:leaseId
-```
-
-Returns the payment status for a specific lease.
-
-**Path Parameters:**
-
-- `leaseId` (required) - ID of the lease
-
-**Response:**
-
-```json
-{
-  "lease_id": 1,
-  "tenant_name": "John Doe",
-  "unit_number": "101",
-  "current_balance": 0,
-  "past_due_amount": 0,
-  "next_payment_date": "2025-05-01",
-  "next_payment_amount": 1000,
-  "payment_history": [
-    {
-      "id": 1,
-      "amount": 1000,
-      "due_date": "2025-04-01",
-      "status": "paid",
-      "payment_date": "2025-04-01"
-    }
+      "payment_type": "income",
+      "description": "Monthly rent",
+      "is_active": true,
+      "created_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-01-15T10:00:00Z"
+    },
+    // ...more recurring payments
   ]
 }
 ```
 
-#### Generate Rent Roll Report
+#### Create Recurring Payment
 
-```
-GET /reports/rent-roll
-```
+Creates a new recurring payment.
 
-Generates a rent roll report for a property.
+```http
+POST /rent-tracking/recurring-payments
+Content-Type: application/json
 
-**Query Parameters:**
-
-- `propertyId` (required) - ID of the property
-- `startDate` (optional) - Start date for the report (YYYY-MM-DD)
-- `endDate` (optional) - End date for the report (YYYY-MM-DD)
-- `format` (optional) - Report format ('json', 'csv', 'pdf')
-
-**Response (JSON format):**
-
-```json
 {
-  "data": [
-    {
-      "unit_number": "101",
-      "tenant_name": "John Doe",
-      "lease_start": "2025-01-01",
-      "lease_end": "2025-12-31",
-      "monthly_rent": 1000,
-      "status": "paid"
-    }
-  ],
-  "summary": {
-    "totalUnits": 1,
-    "totalAmount": 1000,
-    "totalPaid": 1000,
-    "totalPending": 0,
-    "occupancyRate": 100
-  }
-}
-```
-
-### Late Fee Endpoints
-
-#### Get Late Fee Configurations
-
-```
-GET /late-fees/configurations
-```
-
-Returns late fee configurations for a property.
-
-**Query Parameters:**
-
-- `propertyId` (required) - ID of the property
-
-**Response:**
-
-```json
-[
-  {
-    "id": 1,
-    "property_id": 1,
-    "grace_period": 5,
-    "fee_type": "percentage",
-    "fee_amount": 5,
-    "max_fee_amount": 100,
-    "is_compounding": false,
-    "is_active": true
-  }
-]
-```
-
-#### Create Late Fee Configuration
-
-```
-POST /late-fees/configurations
-```
-
-Creates a new late fee configuration for a property.
-
-**Request Body:**
-
-```json
-{
-  "propertyId": 1,
-  "gracePeriod": 5,
-  "feeType": "percentage",
-  "feeAmount": 5,
-  "maxFeeAmount": 100,
-  "isCompounding": false,
-  "isActive": true
-}
-```
-
-**Response:**
-
-```json
-{
-  "id": 1,
-  "property_id": 1,
-  "grace_period": 5,
-  "fee_type": "percentage",
-  "fee_amount": 5,
-  "max_fee_amount": 100,
-  "is_compounding": false,
+  "property_id": 123,
+  "tenant_id": 456,
+  "amount": 1200.00,
+  "frequency": "monthly",
+  "due_date": "2025-04-01",
+  "payment_type": "income",
+  "description": "Monthly rent",
   "is_active": true
 }
 ```
 
-#### Apply Late Fee
-
-```
-POST /late-fees/apply
-```
-
-Applies a late fee to a payment.
-
-**Request Body:**
+Response:
 
 ```json
 {
-  "paymentId": 1,
-  "percentage": 5,
-  "amount": null,
-  "notes": "Late fee for April rent"
+  "status": "success",
+  "data": {
+    "id": 1,
+    "property_id": 123,
+    "tenant_id": 456,
+    "amount": 1200.00,
+    "frequency": "monthly",
+    "due_date": "2025-04-01",
+    "payment_type": "income",
+    "description": "Monthly rent",
+    "is_active": true,
+    "created_at": "2025-03-15T14:30:00Z",
+    "updated_at": "2025-03-15T14:30:00Z"
+  }
 }
 ```
 
-**Response:**
+#### Update Recurring Payment
+
+Updates an existing recurring payment.
+
+```http
+PUT /rent-tracking/recurring-payments/:id
+Content-Type: application/json
+
+{
+  "amount": 1250.00,
+  "description": "Monthly rent (updated)",
+  "is_active": true
+}
+```
+
+Response:
 
 ```json
 {
-  "id": 1,
-  "payment_id": 1,
-  "amount": 50,
-  "status": "pending",
-  "applied_date": "2025-04-06"
+  "status": "success",
+  "data": {
+    "id": 1,
+    "property_id": 123,
+    "tenant_id": 456,
+    "amount": 1250.00,
+    "frequency": "monthly",
+    "due_date": "2025-04-01",
+    "payment_type": "income",
+    "description": "Monthly rent (updated)",
+    "is_active": true,
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-03-15T15:30:00Z"
+  }
 }
 ```
 
-#### Waive Late Fee
+#### Delete Recurring Payment
 
+Deletes a recurring payment.
+
+```http
+DELETE /rent-tracking/recurring-payments/:id
 ```
-POST /late-fees/waive
-```
 
-Waives a late fee.
-
-**Request Body:**
+Response:
 
 ```json
 {
-  "lateFeeId": 1,
-  "reason": "First-time late payment, waiving as courtesy"
+  "status": "success",
+  "message": "Recurring payment deleted successfully"
 }
 ```
 
-**Response:**
+#### Get Payment History
+
+Retrieves payment history for a property.
+
+```http
+GET /rent-tracking/payment-history?property_id=123&limit=20&offset=0
+```
+
+Query Parameters:
+- `property_id` (required): ID of the property
+- `limit` (optional): Number of records to return (default: 20)
+- `offset` (optional): Number of records to skip (default: 0)
+- `start_date` (optional): Filter by payment date (format: YYYY-MM-DD)
+- `end_date` (optional): Filter by payment date (format: YYYY-MM-DD)
+
+Response:
 
 ```json
 {
-  "id": 1,
-  "payment_id": 1,
-  "amount": 50,
-  "status": "waived",
-  "waived_date": "2025-04-06",
-  "waived_reason": "First-time late payment, waiving as courtesy"
+  "status": "success",
+  "data": {
+    "payments": [
+      {
+        "id": 101,
+        "property_id": 123,
+        "tenant_id": 456,
+        "recurring_payment_id": 1,
+        "amount": 1200.00,
+        "payment_date": "2025-03-01",
+        "payment_method": "bank_transfer",
+        "status": "completed",
+        "notes": "On-time payment",
+        "created_at": "2025-03-01T09:15:00Z",
+        "updated_at": "2025-03-01T09:15:00Z"
+      },
+      // ...more payments
+    ],
+    "pagination": {
+      "total": 24,
+      "limit": 20,
+      "offset": 0,
+      "hasMore": true
+    }
+  }
 }
 ```
 
-### Trust Account Endpoints
+#### Check and Apply Late Fees
+
+Checks for overdue payments and applies late fees automatically.
+
+```http
+POST /rent-tracking/check-late-fees
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "appliedFees": [
+      {
+        "payment": {
+          "id": 2,
+          "property_id": 123,
+          "tenant_id": 457,
+          "amount": 1500.00,
+          "frequency": "monthly",
+          "due_date": "2025-03-15",
+          "payment_type": "income",
+          "description": "Monthly rent",
+          "is_active": true
+        },
+        "lateFee": {
+          "id": 1,
+          "recurring_payment_id": 2,
+          "property_id": 123,
+          "tenant_id": 457,
+          "amount": 75.00,
+          "description": "Automatic late fee for payment due on 2025-03-15",
+          "status": "pending",
+          "created_at": "2025-03-16T00:01:00Z",
+          "updated_at": "2025-03-16T00:01:00Z"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Late Fee Management
+
+#### Get Late Fee Configurations
+
+Retrieves late fee configurations for a property.
+
+```http
+GET /late-fees/configurations?property_id=123
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": 1,
+    "property_id": 123,
+    "fee_type": "percentage",
+    "fee_value": 5.00,
+    "grace_period_days": 3,
+    "minimum_fee": 50.00,
+    "maximum_fee": 150.00,
+    "is_active": true,
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-01-15T10:00:00Z"
+  }
+}
+```
+
+#### Create Late Fee Configuration
+
+Creates a new late fee configuration.
+
+```http
+POST /late-fees/configurations
+Content-Type: application/json
+
+{
+  "property_id": 123,
+  "fee_type": "percentage",
+  "fee_value": 5.00,
+  "grace_period_days": 3,
+  "minimum_fee": 50.00,
+  "maximum_fee": 150.00,
+  "is_active": true
+}
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": 1,
+    "property_id": 123,
+    "fee_type": "percentage",
+    "fee_value": 5.00,
+    "grace_period_days": 3,
+    "minimum_fee": 50.00,
+    "maximum_fee": 150.00,
+    "is_active": true,
+    "created_at": "2025-03-15T16:00:00Z",
+    "updated_at": "2025-03-15T16:00:00Z"
+  }
+}
+```
+
+#### Get Late Fees
+
+Retrieves late fees for a property.
+
+```http
+GET /late-fees?property_id=123
+```
+
+Query Parameters:
+- `property_id` (required): ID of the property
+- `tenant_id` (optional): Filter by tenant ID
+- `status` (optional): Filter by status (pending, paid, waived)
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": 1,
+      "recurring_payment_id": 2,
+      "property_id": 123,
+      "tenant_id": 457,
+      "amount": 75.00,
+      "description": "Automatic late fee for payment due on 2025-03-15",
+      "status": "pending",
+      "created_at": "2025-03-16T00:01:00Z",
+      "updated_at": "2025-03-16T00:01:00Z"
+    },
+    // ...more late fees
+  ]
+}
+```
+
+### Trust Account Management
 
 #### Get Trust Accounts
 
+Retrieves all trust accounts for a property.
+
+```http
+GET /trust-accounts?property_id=123
 ```
-GET /trust-accounts
-```
 
-Returns trust accounts for a property.
-
-**Query Parameters:**
-
-- `propertyId` (required) - ID of the property
-- `includeInactive` (optional) - Whether to include inactive accounts
-- `accountType` (optional) - Filter by account type ('security_deposit', 'escrow', 'reserve')
-
-**Response:**
+Response:
 
 ```json
-[
-  {
-    "id": 1,
-    "property_id": 1,
-    "account_name": "Security Deposits",
-    "account_number": "123456789",
-    "bank_name": "First Bank",
-    "account_type": "security_deposit",
-    "is_interest_bearing": true,
-    "interest_rate": 0.5,
-    "balance": "5000.00"
-  }
-]
+{
+  "status": "success",
+  "data": [
+    {
+      "id": 1,
+      "property_id": 123,
+      "name": "Security Deposits",
+      "description": "Tenant security deposits",
+      "balance": 5250.00,
+      "account_type": "escrow",
+      "created_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-03-01T09:00:00Z"
+    },
+    // ...more trust accounts
+  ]
+}
 ```
 
 #### Create Trust Account
 
-```
-POST /trust-accounts
-```
-
 Creates a new trust account.
 
-**Request Body:**
+```http
+POST /trust-accounts
+Content-Type: application/json
 
-```json
 {
-  "propertyId": 1,
-  "accountName": "Security Deposits",
-  "accountNumber": "123456789",
-  "bankName": "First Bank",
-  "routingNumber": "987654321",
-  "accountType": "security_deposit",
-  "isInterestBearing": true,
-  "interestRate": 0.5
+  "property_id": 123,
+  "name": "Maintenance Reserve",
+  "description": "Funds reserved for property maintenance",
+  "initial_balance": 1000.00,
+  "account_type": "reserve"
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
-  "id": 1,
-  "property_id": 1,
-  "account_name": "Security Deposits",
-  "account_number": "123456789",
-  "bank_name": "First Bank",
-  "routing_number": "987654321",
-  "account_type": "security_deposit",
-  "is_interest_bearing": true,
-  "interest_rate": 0.5,
-  "balance": "0.00"
+  "status": "success",
+  "data": {
+    "id": 2,
+    "property_id": 123,
+    "name": "Maintenance Reserve",
+    "description": "Funds reserved for property maintenance",
+    "balance": 1000.00,
+    "account_type": "reserve",
+    "created_at": "2025-03-15T16:30:00Z",
+    "updated_at": "2025-03-15T16:30:00Z"
+  }
 }
 ```
 
 #### Get Trust Account Transactions
 
-```
-GET /trust-accounts/:accountId/transactions
-```
+Retrieves transactions for a trust account.
 
-Returns transactions for a trust account.
-
-**Path Parameters:**
-
-- `accountId` (required) - ID of the trust account
-
-**Query Parameters:**
-
-- `startDate` (optional) - Start date for filtering transactions (YYYY-MM-DD)
-- `endDate` (optional) - End date for filtering transactions (YYYY-MM-DD)
-- `transactionType` (optional) - Filter by transaction type ('deposit', 'withdrawal', 'interest', 'fee')
-- `includeReconciled` (optional) - Whether to include reconciled transactions
-
-**Response:**
-
-```json
-[
-  {
-    "id": 1,
-    "trust_account_id": 1,
-    "lease_id": 1,
-    "tenant_id": 1,
-    "amount": "1000.00",
-    "transaction_type": "deposit",
-    "transaction_date": "2025-04-01",
-    "description": "Security deposit",
-    "reference_number": "12345",
-    "is_reconciled": false
-  }
-]
+```http
+GET /trust-accounts/:id/transactions?limit=20&offset=0
 ```
 
-#### Record Deposit
+Query Parameters:
+- `limit` (optional): Number of records to return (default: 20)
+- `offset` (optional): Number of records to skip (default: 0)
+- `start_date` (optional): Filter by transaction date (format: YYYY-MM-DD)
+- `end_date` (optional): Filter by transaction date (format: YYYY-MM-DD)
+- `transaction_type` (optional): Filter by transaction type (deposit, withdrawal)
 
-```
-POST /trust-accounts/:accountId/deposit
-```
-
-Records a deposit to a trust account.
-
-**Path Parameters:**
-
-- `accountId` (required) - ID of the trust account
-
-**Request Body:**
+Response:
 
 ```json
 {
-  "leaseId": 1,
-  "tenantId": 1,
-  "amount": 1000,
-  "transactionDate": "2025-04-01",
-  "description": "Security deposit",
-  "referenceNumber": "12345",
-  "paymentMethod": "check"
-}
-```
-
-**Response:**
-
-```json
-{
-  "id": 1,
-  "trust_account_id": 1,
-  "lease_id": 1,
-  "tenant_id": 1,
-  "amount": "1000.00",
-  "transaction_type": "deposit",
-  "transaction_date": "2025-04-01",
-  "description": "Security deposit",
-  "reference_number": "12345",
-  "payment_method": "check"
-}
-```
-
-#### Record Withdrawal
-
-```
-POST /trust-accounts/:accountId/withdrawal
-```
-
-Records a withdrawal from a trust account.
-
-**Path Parameters:**
-
-- `accountId` (required) - ID of the trust account
-
-**Request Body:**
-
-```json
-{
-  "leaseId": 1,
-  "tenantId": 1,
-  "amount": 1000,
-  "transactionDate": "2025-04-01",
-  "description": "Security deposit refund",
-  "referenceNumber": "12345",
-  "paymentMethod": "check"
-}
-```
-
-**Response:**
-
-```json
-{
-  "id": 1,
-  "trust_account_id": 1,
-  "lease_id": 1,
-  "tenant_id": 1,
-  "amount": "1000.00",
-  "transaction_type": "withdrawal",
-  "transaction_date": "2025-04-01",
-  "description": "Security deposit refund",
-  "reference_number": "12345",
-  "payment_method": "check"
-}
-```
-
-#### Generate Trust Account Statement
-
-```
-GET /trust-accounts/:accountId/statement
-```
-
-Generates a statement for a trust account.
-
-**Path Parameters:**
-
-- `accountId` (required) - ID of the trust account
-
-**Query Parameters:**
-
-- `startDate` (optional) - Start date for the statement (YYYY-MM-DD)
-- `endDate` (optional) - End date for the statement (YYYY-MM-DD)
-- `format` (optional) - Statement format ('json', 'csv', 'pdf')
-
-**Response (JSON format):**
-
-```json
-{
-  "account": {
-    "id": 1,
-    "account_name": "Security Deposits",
-    "account_number": "123456789",
-    "bank_name": "First Bank",
-    "account_type": "security_deposit"
-  },
-  "transactions": [
-    {
-      "id": 1,
-      "transaction_date": "2025-04-01",
-      "description": "Security deposit",
-      "amount": "1000.00",
-      "transaction_type": "deposit",
-      "running_balance": "1000.00"
-    }
-  ],
-  "summary": {
-    "opening_balance": "0.00",
-    "total_deposits": "1000.00",
-    "total_withdrawals": "0.00",
-    "total_interest": "0.00",
-    "total_fees": "0.00",
-    "closing_balance": "1000.00"
-  }
-}
-```
-
-### Expense Management Endpoints
-
-#### Get Expense Categories
-
-```
-GET /expense-categories
-```
-
-Returns expense categories.
-
-**Query Parameters:**
-
-- `includeInactive` (optional) - Whether to include inactive categories
-- `includeHierarchy` (optional) - Whether to include hierarchical structure
-
-**Response:**
-
-```json
-[
-  {
-    "id": 1,
-    "name": "Repairs",
-    "description": "Property repair expenses",
-    "is_tax_deductible": true,
-    "parent_category_id": null,
-    "is_active": true,
-    "subcategories": [
+  "status": "success",
+  "data": {
+    "transactions": [
       {
-        "id": 2,
-        "name": "Plumbing",
-        "description": "Plumbing repair expenses",
-        "is_tax_deductible": true,
-        "parent_category_id": 1,
-        "is_active": true
-      }
-    ]
+        "id": 1,
+        "trust_account_id": 1,
+        "amount": 1500.00,
+        "transaction_type": "deposit",
+        "category": "security_deposit",
+        "description": "Security deposit from tenant #101",
+        "reference_id": "T101-SD",
+        "transaction_date": "2025-02-15",
+        "balance_after": 1500.00,
+        "created_at": "2025-02-15T14:00:00Z",
+        "updated_at": "2025-02-15T14:00:00Z"
+      },
+      // ...more transactions
+    ],
+    "pagination": {
+      "total": 12,
+      "limit": 20,
+      "offset": 0,
+      "hasMore": false
+    }
   }
-]
-```
-
-#### Create Expense Category
-
-```
-POST /expense-categories
-```
-
-Creates a new expense category.
-
-**Request Body:**
-
-```json
-{
-  "name": "Utilities",
-  "description": "Utility expenses",
-  "isTaxDeductible": true,
-  "parentCategoryId": null
 }
 ```
 
-**Response:**
+#### Create Transaction
+
+Creates a new transaction in a trust account.
+
+```http
+POST /trust-accounts/:id/transactions
+Content-Type: application/json
+
+{
+  "amount": 2000.00,
+  "transaction_type": "deposit",
+  "category": "security_deposit",
+  "description": "Security deposit from tenant #103",
+  "reference_id": "T103-SD",
+  "transaction_date": "2025-03-01"
+}
+```
+
+Response:
 
 ```json
 {
-  "id": 3,
-  "name": "Utilities",
-  "description": "Utility expenses",
-  "is_tax_deductible": true,
-  "parent_category_id": null,
-  "is_active": true
+  "status": "success",
+  "data": {
+    "transaction": {
+      "id": 3,
+      "trust_account_id": 1,
+      "amount": 2000.00,
+      "transaction_type": "deposit",
+      "category": "security_deposit",
+      "description": "Security deposit from tenant #103",
+      "reference_id": "T103-SD",
+      "transaction_date": "2025-03-01",
+      "balance_after": 5250.00,
+      "created_at": "2025-03-15T17:00:00Z",
+      "updated_at": "2025-03-15T17:00:00Z"
+    },
+    "account": {
+      "id": 1,
+      "property_id": 123,
+      "name": "Security Deposits",
+      "description": "Tenant security deposits",
+      "balance": 5250.00,
+      "account_type": "escrow",
+      "created_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-03-15T17:00:00Z"
+    }
+  }
 }
 ```
+
+#### Transfer Between Accounts
+
+Transfers funds between trust accounts.
+
+```http
+POST /trust-accounts/transfer
+Content-Type: application/json
+
+{
+  "from_account_id": 1,
+  "to_account_id": 2,
+  "amount": 500.00,
+  "description": "Transfer to maintenance reserve",
+  "reference_id": "TRF-001",
+  "transaction_date": "2025-03-15"
+}
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "withdrawal": {
+      "id": 4,
+      "trust_account_id": 1,
+      "amount": 500.00,
+      "transaction_type": "withdrawal",
+      "category": "transfer",
+      "description": "Transfer to maintenance reserve",
+      "reference_id": "TRF-001",
+      "transaction_date": "2025-03-15",
+      "related_account_id": 2,
+      "balance_after": 4750.00,
+      "created_at": "2025-03-15T17:30:00Z",
+      "updated_at": "2025-03-15T17:30:00Z"
+    },
+    "deposit": {
+      "id": 5,
+      "trust_account_id": 2,
+      "amount": 500.00,
+      "transaction_type": "deposit",
+      "category": "transfer",
+      "description": "Transfer from security deposits",
+      "reference_id": "TRF-001",
+      "transaction_date": "2025-03-15",
+      "related_account_id": 1,
+      "balance_after": 1500.00,
+      "created_at": "2025-03-15T17:30:00Z",
+      "updated_at": "2025-03-15T17:30:00Z"
+    },
+    "fromAccount": {
+      "id": 1,
+      "property_id": 123,
+      "name": "Security Deposits",
+      "description": "Tenant security deposits",
+      "balance": 4750.00,
+      "account_type": "escrow",
+      "created_at": "2025-01-15T10:00:00Z",
+      "updated_at": "2025-03-15T17:30:00Z"
+    },
+    "toAccount": {
+      "id": 2,
+      "property_id": 123,
+      "name": "Maintenance Reserve",
+      "description": "Funds reserved for property maintenance",
+      "balance": 1500.00,
+      "account_type": "reserve",
+      "created_at": "2025-03-15T16:30:00Z",
+      "updated_at": "2025-03-15T17:30:00Z"
+    }
+  }
+}
+```
+
+### Expense Management
 
 #### Get Expenses
 
+Retrieves expenses for a property.
+
+```http
+GET /expenses?property_id=123&limit=20&offset=0
 ```
-GET /expenses
-```
 
-Returns expenses based on filters.
+Query Parameters:
+- `property_id` (required): ID of the property
+- `limit` (optional): Number of records to return (default: 20)
+- `offset` (optional): Number of records to skip (default: 0)
+- `start_date` (optional): Filter by transaction date (format: YYYY-MM-DD)
+- `end_date` (optional): Filter by transaction date (format: YYYY-MM-DD)
+- `category` (optional): Filter by category
 
-**Query Parameters:**
-
-- `propertyId` (optional) - Filter by property ID
-- `unitId` (optional) - Filter by unit ID
-- `categoryId` (optional) - Filter by category ID
-- `vendorId` (optional) - Filter by vendor ID
-- `startDate` (optional) - Start date for filtering expenses (YYYY-MM-DD)
-- `endDate` (optional) - End date for filtering expenses (YYYY-MM-DD)
-- `status` (optional) - Filter by status ('pending', 'paid', 'cancelled', 'disputed')
-- `isRecurring` (optional) - Filter by recurring status
-- `page` (optional) - Page number for pagination
-- `pageSize` (optional) - Number of items per page
-- `sortBy` (optional) - Field to sort by
-- `sortOrder` (optional) - Sort order ('asc', 'desc')
-
-**Response:**
+Response:
 
 ```json
 {
-  "expenses": [
-    {
-      "id": 1,
-      "property_id": 1,
-      "unit_id": 1,
-      "expense_category_id": 1,
-      "vendor_id": 1,
-      "amount": "100.00",
-      "tax_amount": "10.00",
-      "transaction_date": "2025-04-01",
-      "description": "Plumbing repair",
-      "status": "paid"
+  "status": "success",
+  "data": {
+    "expenses": [
+      {
+        "id": 1,
+        "property_id": 123,
+        "amount": 450.00,
+        "category": "repairs",
+        "vendor": "ABC Plumbing",
+        "description": "Plumbing repair - Unit 201",
+        "transaction_date": "2025-03-10",
+        "payment_method": "check",
+        "reference_number": "CHK-1001",
+        "receipt_image_id": 101,
+        "has_receipt": true,
+        "created_at": "2025-03-10T15:00:00Z",
+        "updated_at": "2025-03-10T15:00:00Z"
+      },
+      // ...more expenses
+    ],
+    "pagination": {
+      "total": 15,
+      "limit": 20,
+      "offset": 0,
+      "hasMore": false
     }
-  ],
-  "pagination": {
-    "total": 1,
-    "page": 1,
-    "pageSize": 10,
-    "totalPages": 1
   }
 }
 ```
 
-#### Record Expense
+#### Create Expense
 
-```
+Creates a new expense.
+
+```http
 POST /expenses
-```
+Content-Type: multipart/form-data
 
-Records a new expense.
-
-**Request Body:**
-
-```json
 {
-  "propertyId": 1,
-  "unitId": 1,
-  "expenseCategoryId": 1,
-  "vendorId": 1,
-  "amount": 100,
-  "taxAmount": 10,
-  "transactionDate": "2025-04-01",
-  "dueDate": "2025-04-15",
-  "description": "Plumbing repair",
-  "notes": "Emergency repair",
-  "status": "pending"
+  "property_id": 123,
+  "amount": 350.00,
+  "category": "supplies",
+  "vendor": "Home Supply Co.",
+  "description": "Maintenance supplies",
+  "transaction_date": "2025-03-08",
+  "payment_method": "credit_card",
+  "reference_number": "CC-3457",
+  "receipt_image": <file>
 }
 ```
 
-**Response:**
+Response:
 
 ```json
 {
-  "id": 1,
-  "property_id": 1,
-  "unit_id": 1,
-  "expense_category_id": 1,
-  "vendor_id": 1,
-  "amount": "100.00",
-  "tax_amount": "10.00",
-  "transaction_date": "2025-04-01",
-  "due_date": "2025-04-15",
-  "description": "Plumbing repair",
-  "notes": "Emergency repair",
-  "status": "pending"
-}
-```
-
-#### Get Expense Details
-
-```
-GET /expenses/:expenseId
-```
-
-Returns details for a specific expense.
-
-**Path Parameters:**
-
-- `expenseId` (required) - ID of the expense
-
-**Response:**
-
-```json
-{
-  "id": 1,
-  "property_id": 1,
-  "property_name": "Property Name",
-  "unit_id": 1,
-  "unit_number": "101",
-  "expense_category_id": 1,
-  "category_name": "Repairs",
-  "vendor_id": 1,
-  "vendor_name": "Plumbing Company",
-  "amount": "100.00",
-  "tax_amount": "10.00",
-  "transaction_date": "2025-04-01",
-  "due_date": "2025-04-15",
-  "payment_date": null,
-  "description": "Plumbing repair",
-  "notes": "Emergency repair",
-  "status": "pending",
-  "receipt_image": {
-    "id": 1,
-    "filename": "receipt.jpg",
-    "url": "/api/accounting/expenses/1/receipt"
+  "status": "success",
+  "data": {
+    "id": 4,
+    "property_id": 123,
+    "amount": 350.00,
+    "category": "supplies",
+    "vendor": "Home Supply Co.",
+    "description": "Maintenance supplies",
+    "transaction_date": "2025-03-08",
+    "payment_method": "credit_card",
+    "reference_number": "CC-3457",
+    "receipt_image_id": 103,
+    "has_receipt": true,
+    "created_at": "2025-03-15T18:00:00Z",
+    "updated_at": "2025-03-15T18:00:00Z"
   }
 }
 ```
 
-#### Mark Expense as Paid
+#### Get Receipt Image
 
-```
-POST /expenses/:expenseId/mark-paid
-```
+Retrieves a receipt image.
 
-Marks an expense as paid.
-
-**Path Parameters:**
-
-- `expenseId` (required) - ID of the expense
-
-**Request Body:**
-
-```json
-{
-  "paymentDate": "2025-04-10",
-  "paymentMethod": "check",
-  "referenceNumber": "12345",
-  "notes": "Paid in full"
-}
+```http
+GET /expenses/receipts/:id
 ```
 
-**Response:**
-
-```json
-{
-  "id": 1,
-  "status": "paid",
-  "payment_date": "2025-04-10",
-  "payment_method": "check",
-  "reference_number": "12345",
-  "notes": "Paid in full"
-}
-```
-
-#### Generate Expense Report
-
-```
-GET /reports/expense
-```
-
-Generates an expense report.
-
-**Query Parameters:**
-
-- `propertyId` (optional) - Filter by property ID
-- `propertyIds` (optional) - Filter by multiple property IDs
-- `unitId` (optional) - Filter by unit ID
-- `categoryId` (optional) - Filter by category ID
-- `vendorId` (optional) - Filter by vendor ID
-- `startDate` (required) - Start date for the report (YYYY-MM-DD)
-- `endDate` (required) - End date for the report (YYYY-MM-DD)
-- `groupBy` (optional) - Group by field ('property', 'unit', 'category', 'vendor', 'month')
-- `reportType` (optional) - Report type ('summary', 'detailed')
-- `format` (optional) - Report format ('json', 'csv', 'pdf')
-
-**Response (JSON format):**
-
-```json
-{
-  "data": [
-    {
-      "category_name": "Repairs",
-      "total_amount": "500.00",
-      "expense_count": 5
-    },
-    {
-      "category_name": "Utilities",
-      "total_amount": "300.00",
-      "expense_count": 3
-    }
-  ],
-  "summary": {
-    "totalAmount": 800,
-    "expenseCount": 8,
-    "categoryCount": 2
-  }
-}
-```
-
-### Financial Dashboard Endpoints
-
-#### Get Financial Dashboard Data
-
-```
-GET /dashboard
-```
-
-Returns financial dashboard data for a property.
-
-**Query Parameters:**
-
-- `propertyId` (required) - ID of the property
-- `startDate` (optional) - Start date for the dashboard data (YYYY-MM-DD)
-- `e<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
+Response:
+- Binary imag<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>

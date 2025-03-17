@@ -1,269 +1,364 @@
-# Advanced Accounting Module - User Guide
+# Property Management System - User Guide
 
 ## Introduction
 
-Welcome to the Advanced Accounting Module for the Comprehensive Property Management System. This guide will help you understand and use the various features of the accounting module to manage your property finances effectively.
+Welcome to the Comprehensive Property Management System! This user guide provides detailed instructions on how to use the accounting module features of the system. The accounting module helps you manage rent tracking, late fees, trust accounts, expense management, financial reporting, and cash flow prediction.
 
 ## Getting Started
 
-### Accessing the Accounting Module
+### System Requirements
 
-1. Log in to your Property Management System account
-2. From the main dashboard, click on the sidebar menu
-3. Under the "Accounting" section, you'll find the following options:
-   - Rent Tracking
-   - Trust Accounts
-   - Expenses
-   - Reports
-   - Late Fees
+- Web Browser: Chrome 90+, Firefox 88+, Safari 14+, or Edge 90+
+- Internet Connection: Broadband connection (1 Mbps or faster)
+- Screen Resolution: Minimum 1280 x 720 pixels
+
+### Accessing the System
+
+1. Open your web browser and navigate to [https://app.example.com](https://app.example.com)
+2. Enter your email address and password
+3. Click "Sign In"
+
+If you've forgotten your password, click the "Forgot Password" link on the login page and follow the instructions to reset it.
 
 ### Dashboard Overview
 
-The Accounting Module provides a comprehensive dashboard with key financial metrics:
-- Total rent due and collected
-- Trust account balances
-- Recent expenses
-- Cash flow analysis
-- Payment status summaries
+After logging in, you'll see the main dashboard with the following sections:
 
-## Rent Tracking
+- **Navigation Menu**: Located on the left side of the screen, use this to access different modules
+- **Property Selector**: Located at the top of the screen, use this to switch between properties
+- **Quick Actions**: Located in the top-right corner, provides access to common tasks
+- **Dashboard Widgets**: Displays key information and metrics for the selected property
 
-The Rent Tracking feature allows you to manage all aspects of rent payments, including tracking due payments, recording payments, and handling late fees.
+## Accounting Module
 
-### Viewing Due Payments
+The Accounting Module is accessed by clicking "Accounting" in the navigation menu. This module includes several key features:
 
-1. Navigate to **Accounting > Rent Tracking**
-2. Select a property from the dropdown menu
-3. The system will display all due payments for the selected property
-4. Use the filters to narrow down the results:
-   - Date range
-   - Payment status
-   - Search by tenant name or unit number
+### Rent Tracking
 
-### Recording a Payment
+The Rent Tracking feature helps you manage recurring payments, track payment history, and automate late fees.
 
-1. From the Rent Tracking dashboard, find the payment you want to record
-2. Click the "Record Payment" button (dollar sign icon)
-3. Enter the payment details:
-   - Amount
-   - Payment date
-   - Payment method (check, cash, credit card, etc.)
-   - Reference number (if applicable)
-   - Notes (optional)
-4. Click "Record Payment" to save
+#### Setting Up Recurring Payments
 
-### Generating a Rent Roll Report
+1. Navigate to Accounting > Rent Tracking
+2. Click the "Add Recurring Payment" button
+3. Fill in the required information:
+   - Tenant: Select the tenant from the dropdown
+   - Amount: Enter the payment amount
+   - Frequency: Select monthly, quarterly, annual, or one-time
+   - Due Date: Select the date when payment is due
+   - Payment Type: Select income or expense
+   - Description: Enter a description for the payment
+4. Click "Save" to create the recurring payment
 
-1. From the Rent Tracking dashboard, click the "Rent Roll" button
-2. Select the date range for the report
-3. Choose the report format (PDF, CSV, or JSON)
-4. Click "Generate Report"
-5. The report will be generated and can be downloaded or viewed directly
+#### Recording Payments
 
-## Trust Account Management
+1. Navigate to Accounting > Rent Tracking
+2. Find the recurring payment in the list
+3. Click the "Record Payment" button
+4. Enter the payment details:
+   - Amount: The payment amount (pre-filled with the recurring payment amount)
+   - Payment Date: The date the payment was received
+   - Payment Method: Select bank transfer, credit card, check, cash, or other
+   - Notes: Add any additional information about the payment
+5. Click "Add Payment" to record the payment
 
-The Trust Account Management feature allows you to manage security deposits, escrow accounts, and other trust funds with separate ledgers.
+#### Viewing Payment History
 
-### Creating a Trust Account
+1. Navigate to Accounting > Rent Tracking
+2. Scroll down to the "Recent Payment History" section
+3. Click "View All Payment History" to see a complete list of payments
+4. Use the filters to narrow down the results by date range, tenant, or payment status
 
-1. Navigate to **Accounting > Trust Accounts**
-2. Click the "Add Account" button
-3. Enter the account details:
-   - Account name
-   - Account type (security deposit, escrow, reserve)
-   - Bank information (optional)
-   - Interest-bearing status and rate (if applicable)
-4. Click "Create Account" to save
+#### Managing Late Fees
 
-### Recording Deposits and Withdrawals
+1. Navigate to Accounting > Rent Tracking
+2. Scroll down to the "Late Fees" section
+3. View existing late fees and their status
+4. To configure late fee rules:
+   - Click "Settings" in the top-right corner
+   - Select "Late Fee Configuration"
+   - Set the fee type (percentage or fixed amount)
+   - Set the fee value
+   - Set the grace period (days after due date before late fee applies)
+   - Set minimum and maximum fee amounts (for percentage-based fees)
+   - Click "Save" to apply the configuration
 
-1. From the Trust Accounts dashboard, select the account you want to work with
-2. Click "Record Deposit" or "Record Withdrawal"
-3. Enter the transaction details:
-   - Amount
-   - Transaction date
-   - Description
-   - Associated tenant/lease (if applicable)
-   - Reference number
-   - Payment method
-4. Click "Save Transaction" to record
+### Trust Account Management
 
-### Generating Account Statements
+The Trust Account Management feature helps you manage trust accounts such as security deposits, escrow accounts, and reserve funds.
 
-1. From the Trust Accounts dashboard, select the account
-2. Click the "Generate Statement" button
-3. Select the date range for the statement
-4. Choose the format (PDF, CSV, or JSON)
-5. Click "Generate Statement"
-6. The statement will be generated and can be downloaded or viewed directly
+#### Creating a Trust Account
 
-## Expense Management
+1. Navigate to Accounting > Trust Accounts
+2. Click the "Add Trust Account" button
+3. Fill in the required information:
+   - Name: Enter a name for the trust account
+   - Description: Enter a description for the account
+   - Initial Balance: Enter the starting balance
+   - Account Type: Select escrow, reserve, or other
+4. Click "Create Account" to set up the trust account
 
-The Expense Management feature allows you to track and categorize expenses, upload receipts, and generate expense reports.
+#### Recording Transactions
 
-### Recording an Expense
+1. Navigate to Accounting > Trust Accounts
+2. Select the trust account from the dropdown
+3. Click "Deposit" to add funds or "Withdraw" to remove funds
+4. Enter the transaction details:
+   - Amount: The transaction amount
+   - Category: Select the appropriate category
+   - Description: Enter a description for the transaction
+   - Reference ID: Enter a reference number if applicable
+   - Transaction Date: The date of the transaction
+5. Click "Add Deposit" or "Add Withdrawal" to record the transaction
 
-1. Navigate to **Accounting > Expenses**
+#### Transferring Between Accounts
+
+1. Navigate to Accounting > Trust Accounts
+2. Click the "Transfer" button
+3. Enter the transfer details:
+   - From Account: Select the source account
+   - To Account: Select the destination account
+   - Amount: Enter the transfer amount
+   - Description: Enter a description for the transfer
+   - Reference ID: Enter a reference number if applicable
+   - Transaction Date: The date of the transfer
+4. Click "Transfer Funds" to complete the transfer
+
+#### Viewing Account Summary
+
+1. Navigate to Accounting > Trust Accounts
+2. Select the trust account from the dropdown
+3. View the account summary, which includes:
+   - Current balance
+   - Total deposits and withdrawals
+   - Recent transactions
+   - Monthly activity chart
+
+### Expense Management
+
+The Expense Management feature helps you track expenses, categorize them, and store receipt images.
+
+#### Recording Expenses
+
+1. Navigate to Accounting > Expenses
 2. Click the "Add Expense" button
-3. Enter the expense details:
-   - Amount
-   - Tax amount (if applicable)
-   - Date
-   - Category
-   - Property/unit association
-   - Vendor information
-   - Description
-   - Payment status
-4. Upload a receipt image (optional)
-5. Click "Save Expense" to record
+3. Fill in the expense details:
+   - Amount: Enter the expense amount
+   - Category: Select the appropriate category
+   - Vendor: Enter the vendor or payee name
+   - Description: Enter a description for the expense
+   - Transaction Date: The date of the expense
+   - Payment Method: Select check, credit card, ACH/bank transfer, cash, or other
+   - Reference Number: Enter a reference number if applicable
+4. Upload a receipt image (optional):
+   - Click "Upload Receipt"
+   - Select the image file from your computer
+   - The receipt will be attached to the expense record
+5. Click "Add Expense" to save the expense
 
-### Managing Expense Categories
+#### Viewing and Filtering Expenses
 
-1. From the Expenses dashboard, click "Manage Categories"
-2. View existing categories or add new ones
-3. For new categories:
-   - Enter category name
-   - Add description
-   - Set tax deductibility status
-   - Select parent category (if it's a subcategory)
-4. Click "Save Category" to add
+1. Navigate to Accounting > Expenses
+2. Use the tabs to filter expenses:
+   - All Expenses: Shows all expenses
+   - With Receipts: Shows expenses with attached receipts
+   - Missing Receipts: Shows expenses without receipts
+3. Use the search box to find specific expenses
+4. Use the filter button to filter by date range, category, or amount
+5. Click on the receipt icon to view the attached receipt
 
-### Generating Expense Reports
+#### Analyzing Expense Data
 
-1. From the Expenses dashboard, click "Generate Report"
-2. Set the report parameters:
-   - Date range
-   - Properties to include
-   - Grouping option (by category, property, vendor, etc.)
-   - Report type (summary or detailed)
-   - Format (PDF, CSV, or JSON)
-3. Click "Generate Report"
-4. The report will be generated and can be downloaded or viewed directly
+1. Navigate to Accounting > Expenses
+2. View the expense summary at the top of the page, which includes:
+   - Total expenses for the current month
+   - Breakdown of expenses by category (pie chart)
+   - Monthly expense trend (bar chart)
+3. Export expense data by clicking the "Export" button
 
-## Late Fee Management
+### Financial Reporting
 
-The Late Fee Management feature allows you to configure late fee rules, apply late fees to overdue payments, and track late fee status.
+The Financial Reporting feature provides insights into your property's financial performance.
 
-### Configuring Late Fee Rules
+#### Generating Reports
 
-1. Navigate to **Accounting > Late Fees**
-2. Select a property from the dropdown
-3. Click "Add Configuration" to create a new rule
-4. Set the late fee parameters:
-   - Grace period (days)
-   - Fee type (percentage or fixed amount)
-   - Fee amount
-   - Maximum fee amount (if applicable)
-   - Compounding option
-5. Click "Save Configuration" to apply
-
-### Applying Late Fees
-
-1. From the Rent Tracking dashboard, identify overdue payments
-2. Click the "Apply Late Fee" button (warning icon)
-3. Confirm the late fee details:
-   - Fee amount (calculated automatically based on configuration)
-   - Notes (optional)
-4. Click "Apply Fee" to confirm
-
-### Waiving Late Fees
-
-1. From the Rent Tracking dashboard, find the payment with an applied late fee
-2. Click the "Waive Fee" option
-3. Enter a reason for waiving the fee
-4. Click "Confirm" to waive the fee
-
-## Financial Reporting
-
-The Financial Reporting feature provides comprehensive reports across all accounting areas.
-
-### Available Reports
-
-- **Rent Roll Report**: Shows all units, tenants, and rent payment status
-- **Expense Report**: Summarizes expenses by category, property, or time period
-- **Trust Account Statement**: Shows all transactions and balances for trust accounts
-- **Cash Flow Report**: Analyzes income and expenses over time
-- **Late Fee Report**: Summarizes applied and collected late fees
-- **Tax Deduction Report**: Lists all tax-deductible expenses
-
-### Generating Reports
-
-1. Navigate to **Accounting > Reports**
-2. Select the report type from the available options
+1. Navigate to Accounting > Financial Reports
+2. Select the report type:
+   - Profit & Loss: Shows income and expenses for a period
+   - Cash Flow: Shows cash inflows and outflows
+   - Balance Sheet: Shows assets, liabilities, and equity
+   - Rent Roll: Shows current rent status for all units
+   - Expense Report: Shows detailed expense breakdown
 3. Set the report parameters:
-   - Date range
-   - Properties to include
-   - Grouping options
-   - Format (PDF, CSV, or JSON)
-4. Click "Generate Report"
-5. The report will be generated and can be downloaded or viewed directly
+   - Date Range: Select the period for the report
+   - Property: Select specific properties or all properties
+   - Format: Select PDF, Excel, or CSV
+4. Click "Generate Report" to create the report
+5. Download or print the report using the buttons provided
 
-## Recurring Transactions
+#### Viewing Financial Dashboards
 
-The system can automatically process recurring transactions like rent payments and recurring expenses.
+1. Navigate to Accounting > Financial Reports
+2. View the financial dashboards, which include:
+   - Income Summary: Shows income by category and monthly trend
+   - Expense Summary: Shows expenses by category and monthly trend
+   - Net Operating Income: Shows income minus expenses
+   - Key Performance Indicators: Shows occupancy rate, expense ratio, etc.
+3. Use the date range selector to change the period displayed
 
-### Setting Up Recurring Expenses
+### Cash Flow Prediction
 
-1. When recording an expense, check the "Recurring" option
-2. Set the recurrence pattern:
-   - Frequency (monthly, quarterly, annually)
-   - Start date
-   - End date (optional)
-   - Next occurrence date
-3. Save the expense as usual
+The Cash Flow Prediction feature uses AI to forecast future cash flows and detect anomalies.
 
-### Processing Recurring Transactions
+#### Viewing Cash Flow Predictions
 
-The system automatically processes recurring transactions daily at midnight. You can also manually trigger processing:
+1. Navigate to Accounting > Cash Flow
+2. View the cash flow prediction chart, which shows:
+   - Historical cash flow (past 6-12 months)
+   - Predicted cash flow (next 6 months)
+   - Confidence intervals for predictions
+3. Adjust the prediction parameters:
+   - Prediction Period: Change the number of months to predict
+   - Include Historical Data: Toggle whether to show historical data
+4. View the prediction summary, which includes:
+   - Total expected income
+   - Total expected expenses
+   - Total expected net cash flow
+   - Average monthly net cash flow
 
-1. Navigate to **Accounting > Reports**
-2. Click "Process Recurring Transactions"
-3. Confirm the action
-4. The system will process all due recurring transactions and provide a summary
+#### Detecting Anomalies
+
+1. Navigate to Accounting > Cash Flow
+2. Click the "Detect Anomalies" button
+3. The system will analyze your financial data and highlight potential issues:
+   - Unusually high or low income
+   - Unusually high or low expenses
+   - Duplicate transactions
+   - Missing transactions
+4. Review each anomaly and take appropriate action:
+   - Click "Ignore" to dismiss the anomaly
+   - Click "Fix" to address the issue
+   - Click "Details" to see more information
 
 ## Tips and Best Practices
 
 ### Rent Tracking
-- Record payments promptly to maintain accurate records
-- Send payment reminders a few days before due dates
-- Review the rent roll report monthly to identify trends
 
-### Trust Accounts
-- Reconcile trust accounts monthly with bank statements
-- Keep detailed notes for all transactions
-- Generate statements quarterly for record-keeping
+- Set up recurring payments for all tenants to automate rent tracking
+- Record payments promptly to maintain accurate records
+- Review overdue payments weekly and follow up with tenants
+- Configure late fee rules according to your lease agreements
+
+### Trust Account Management
+
+- Create separate trust accounts for different purposes (security deposits, reserves, etc.)
+- Reconcile trust accounts monthly to ensure accuracy
+- Document the purpose of each transaction in the description field
+- Use the reference ID field to link transactions to external documents
 
 ### Expense Management
-- Always categorize expenses correctly for accurate reporting
-- Upload receipt images for all expenses when possible
-- Review expense reports monthly to identify cost-saving opportunities
 
-### Late Fees
-- Establish clear late fee policies and communicate them to tenants
-- Apply late fees consistently to avoid disputes
-- Document reasons for any waived late fees
+- Categorize expenses consistently for accurate reporting
+- Upload receipt images for all expenses to maintain proper documentation
+- Review expenses without receipts regularly and add missing documentation
+- Use the search and filter functions to find specific expenses
+
+### Financial Reporting
+
+- Generate monthly financial reports to track performance
+- Compare current performance to previous periods to identify trends
+- Share reports with stakeholders (owners, investors, etc.) as needed
+- Export data to Excel for custom analysis when required
+
+### Cash Flow Prediction
+
+- Review cash flow predictions monthly to plan for future expenses
+- Pay attention to confidence scores for predictions
+- Investigate anomalies promptly to prevent potential issues
+- Update recurring payment information to improve prediction accuracy
 
 ## Troubleshooting
 
-### Common Issues and Solutions
+### Common Issues
 
-**Issue**: Payment recorded incorrectly
-**Solution**: Find the payment in Rent Tracking, click "Edit Payment," make corrections, and save
+#### Login Problems
 
-**Issue**: Trust account balance doesn't match bank statement
-**Solution**: Generate a detailed statement, compare with bank records, and reconcile any differences
+- **Issue**: Unable to log in
+- **Solution**: Verify your email and password, check caps lock, reset password if necessary
 
-**Issue**: Expense category missing
-**Solution**: Go to Expense Categories, add the new category, then categorize the expense
+#### Missing Data
 
-**Issue**: Late fee not calculating correctly
-**Solution**: Check the late fee configuration for the property, ensure the correct rule is active
+- **Issue**: Transactions or records are missing
+- **Solution**: Check filters, verify the correct property is selected, contact support if data is truly missing
 
-## Getting Help
+#### Report Generation Errors
 
-If you need additional assistance:
+- **Issue**: Unable to generate reports
+- **Solution**: Try a different date range, refresh the page, clear browser cache, contact support if issue persists
 
-- Click the "Help" icon in the top-right corner of any screen
-- Email support at support@propertymanagement.com
-- Call our support team at (555) 123-4567
-- Check our knowledge base at help.propertymanagement.com
+#### Receipt Upload Failures
+
+- **Issue**: Unable to upload receipt images
+- **Solution**: Check file format (JPG, PNG, PDF supported), reduce file size if over 10MB, try a different browser
+
+### Getting Help
+
+If you encounter issues not covered in this guide:
+
+1. Click the "Help" button in the top-right corner
+2. Search the knowledge base for articles related to your issue
+3. Click "Contact Support" to submit a support ticket
+4. For urgent issues, call support at (555) 123-4567
+
+## Glossary
+
+- **Recurring Payment**: A scheduled payment that occurs at regular intervals
+- **Late Fee**: A charge applied when a payment is received after the due date
+- **Trust Account**: A separate account for holding funds that belong to others
+- **Escrow**: Funds held by a third party on behalf of others
+- **Reserve Fund**: Money set aside for future expenses or contingencies
+- **Net Operating Income (NOI)**: Total income minus total expenses
+- **Cash Flow**: The movement of money in and out of a business
+- **Anomaly**: An unusual or unexpected pattern in financial data
+
+## Appendix
+
+### Keyboard Shortcuts
+
+- **Alt + D**: Go to Dashboard
+- **Alt + R**: Go to Rent Tracking
+- **Alt + T**: Go to Trust Accounts
+- **Alt + E**: Go to Expenses
+- **Alt + F**: Go to Financial Reports
+- **Alt + C**: Go to Cash Flow
+- **Alt + N**: Create New (context-dependent)
+- **Alt + S**: Save current form
+- **Esc**: Close dialog or cancel current action
+
+### Mobile App
+
+The Property Management System is also available as a mobile app for iOS and Android devices. The mobile app provides access to key features on the go:
+
+1. Download the app from the App Store or Google Play
+2. Log in with your existing credentials
+3. Use the bottom navigation to access different modules
+4. Swipe left/right to navigate between related screens
+
+Note that some advanced features may only be available in the web application.
+
+### Data Import/Export
+
+To import or export data:
+
+1. Navigate to Settings > Data Management
+2. Select "Import Data" or "Export Data"
+3. For imports:
+   - Select the data type (tenants, properties, transactions, etc.)
+   - Download the template file
+   - Fill in the template with your data
+   - Upload the completed template
+4. For exports:
+   - Select the data type
+   - Choose the format (CSV, Excel, PDF)
+   - Set any filters or date ranges
+   - Click "Export" to download the file
