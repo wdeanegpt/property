@@ -1,623 +1,298 @@
 /**
- * LateFeeService.js
+ * Late Fee Service
  * 
- * This service handles late fee configuration, calculation, and management.
- * It provides methods for configuring late fee rules, calculating late fees
- * for overdue payments, applying late fees, and managing late fee waivers.
- * 
- * Part of the Advanced Accounting Module (Step 023) for the
- * Comprehensive Property Management System.
+ * This service handles late fee configurations and calculations.
+ * It provides methods for managing late fee rules, calculating fees,
+ * and processing late fee payments.
  */
 
-const { Pool } = require('pg');
-const moment = require('moment');
-const config = require('../config/database');
-const NotificationService = require('./NotificationService');
+const database = require('../utils/database');
 
 class LateFeeService {
-  constructor() {
-    this.pool = new Pool(config.postgres);
-    this.notificationService = new NotificationService();
-  }
-
   /**
    * Get late fee configuration for a property
-   * 
    * @param {number} propertyId - The ID of the property
-   * @returns {Promise<Object>} - Late fee configuration object
+   * @returns {Promise<Object>} - Late fee configuration
    */
   async getLateFeeConfiguration(propertyId) {
+    if (!propertyId) {
+      throw new Error('Property ID is required');
+    }
+
+    const query = `
+      SELECT *
+      FROM late_fee_configurations
+      WHERE property_id = $1 AND is_active = true
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
     try {
-      const query = `
-        SELECT * FROM late_fee_configurations
-        WHERE property_id = $1 AND is_active = true
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
+      const result = await database.query(query, [propertyId]);
       
-      const { rows } = await this.pool.query(query, [propertyId]);
-      
-      if (rows.length === 0) {
-        return null;
+      if (result.rows.length === 0) {
+        // Return default configuration if none exists
+        return {
+          property_id: propertyId,
+          fee_type: 'percentage',
+          fee_amount: 5, // 5% default
+          grace_period_days: 5,
+          maximum_fee: 100,
+          is_compounding: false,
+          is_active: true
+        };
       }
       
-      return rows[0];
+      return result.rows[0];
     } catch (error) {
       console.error('Error getting late fee configuration:', error);
-      throw new Error('Failed to get late fee configuration');
+      throw new Error('Failed to retrieve late fee configuration');
     }
   }
 
   /**
    * Create or update late fee configuration for a property
-   * 
-   * @param {Object} configData - Late fee configuration data
+   * @param {Object} configData - The configuration data
    * @param {number} configData.propertyId - The ID of the property
-   * @param {string} configData.feeType - Type of late fee ('percentage' or 'fixed')
-   * @param {number} configData.feeAmount - Amount of late fee (percentage or fixed amount)
-   * @param {number} configData.gracePeriodDays - Number of days after due date before late fee is applied
-   * @param {number} configData.maximumFee - Maximum late fee amount when using percentage (null for no maximum)
-   * @param {boolean} configData.isCompounding - Whether late fees compound (can be applied multiple times)
-   * @param {number} configData.userId - The ID of the user creating/updating the configuration
-   * @returns {Promise<Object>} - Created/updated late fee configuration
+   * @param {string} configData.feeType - The fee type ('percentage' or 'fixed')
+   * @param {number} configData.feeAmount - The fee amount (percentage or fixed amount)
+   * @param {number} configData.gracePeriodDays - The grace period in days
+   * @param {number} configData.maximumFee - The maximum fee amount (for percentage type)
+   * @param {boolean} configData.isCompounding - Whether the fee compounds
+   * @returns {Promise<Object>} - The created or updated configuration
    */
-  async createOrUpdateLateFeeConfiguration(configData) {
-    const client = await this.pool.connect();
+  async saveLateFeeConfiguration(configData) {
+    const {
+      propertyId,
+      feeType,
+      feeAmount,
+      gracePeriodDays = 0,
+      maximumFee = null,
+      isCompounding = false
+    } = configData;
+
+    // Validate required fields
+    if (!propertyId || !feeType || !feeAmount) {
+      throw new Error('Property ID, fee type, and fee amount are required');
+    }
+
+    // Validate fee type
+    if (feeType !== 'percentage' && feeType !== 'fixed') {
+      throw new Error('Fee type must be either "percentage" or "fixed"');
+    }
+
+    // Begin transaction
+    const client = await database.getClient();
     
     try {
       await client.query('BEGIN');
       
-      // Check if configuration already exists
-      const checkQuery = `
-        SELECT id FROM late_fee_configurations
-        WHERE property_id = $1 AND is_active = true
-      `;
-      
-      const checkResult = await client.query(checkQuery, [configData.propertyId]);
-      
-      let lateFeeConfig;
-      
-      if (checkResult.rows.length > 0) {
-        // Update existing configuration
-        const updateQuery = `
-          UPDATE late_fee_configurations
-          SET 
-            fee_type = $1,
-            fee_amount = $2,
-            grace_period_days = $3,
-            maximum_fee = $4,
-            is_compounding = $5,
-            updated_at = NOW()
-          WHERE id = $6
-          RETURNING *
-        `;
-        
-        const updateResult = await client.query(updateQuery, [
-          configData.feeType,
-          configData.feeAmount,
-          configData.gracePeriodDays,
-          configData.maximumFee,
-          configData.isCompounding,
-          checkResult.rows[0].id
-        ]);
-        
-        lateFeeConfig = updateResult.rows[0];
-      } else {
-        // Create new configuration
-        const insertQuery = `
-          INSERT INTO late_fee_configurations (
-            property_id,
-            fee_type,
-            fee_amount,
-            grace_period_days,
-            maximum_fee,
-            is_compounding,
-            is_active,
-            created_by,
-            created_at,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, true, $7, NOW(), NOW())
-          RETURNING *
-        `;
-        
-        const insertResult = await client.query(insertQuery, [
-          configData.propertyId,
-          configData.feeType,
-          configData.feeAmount,
-          configData.gracePeriodDays,
-          configData.maximumFee,
-          configData.isCompounding,
-          configData.userId
-        ]);
-        
-        lateFeeConfig = insertResult.rows[0];
-      }
-      
-      await client.query('COMMIT');
-      
-      return lateFeeConfig;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Error creating/updating late fee configuration:', error);
-      throw new Error('Failed to create/update late fee configuration');
-    } finally {
-      client.release();
-    }
-  }
-
-  /**
-   * Deactivate late fee configuration for a property
-   * 
-   * @param {number} propertyId - The ID of the property
-   * @param {number} userId - The ID of the user deactivating the configuration
-   * @returns {Promise<boolean>} - Whether the deactivation was successful
-   */
-  async deactivateLateFeeConfiguration(propertyId, userId) {
-    try {
-      const query = `
+      // Deactivate existing configurations
+      const deactivateQuery = `
         UPDATE late_fee_configurations
-        SET is_active = false, updated_at = NOW()
+        SET is_active = false, updated_at = CURRENT_TIMESTAMP
         WHERE property_id = $1 AND is_active = true
       `;
       
-      const result = await this.pool.query(query, [propertyId]);
+      await client.query(deactivateQuery, [propertyId]);
       
-      return result.rowCount > 0;
-    } catch (error) {
-      console.error('Error deactivating late fee configuration:', error);
-      throw new Error('Failed to deactivate late fee configuration');
-    }
-  }
-
-  /**
-   * Calculate late fee for an overdue payment
-   * 
-   * @param {Object} paymentData - Payment data
-   * @param {number} paymentData.propertyId - The ID of the property
-   * @param {number} paymentData.amount - The full payment amount
-   * @param {number} paymentData.amountPaid - The amount already paid
-   * @param {Date} paymentData.dueDate - The payment due date
-   * @param {Date} paymentData.asOfDate - The date to calculate late fee as of (default: current date)
-   * @returns {Promise<Object>} - Calculated late fee object
-   */
-  async calculateLateFee(paymentData) {
-    try {
-      const { 
-        propertyId, 
-        amount, 
-        amountPaid = 0, 
-        dueDate, 
-        asOfDate = new Date() 
-      } = paymentData;
-      
-      // Get late fee configuration
-      const lateFeeConfig = await this.getLateFeeConfiguration(propertyId);
-      
-      if (!lateFeeConfig) {
-        return {
-          lateFeeAmount: 0,
-          daysLate: 0,
-          gracePeriod: 0,
-          feeType: null,
-          feeRate: null,
-          isWithinGracePeriod: true
-        };
-      }
-      
-      // Calculate days late
-      const dueDateObj = moment(dueDate);
-      const asOfDateObj = moment(asOfDate);
-      const daysLate = Math.max(0, asOfDateObj.diff(dueDateObj, 'days'));
-      
-      // Check if within grace period
-      if (daysLate <= lateFeeConfig.grace_period_days) {
-        return {
-          lateFeeAmount: 0,
-          daysLate,
-          gracePeriod: lateFeeConfig.grace_period_days,
-          feeType: lateFeeConfig.fee_type,
-          feeRate: lateFeeConfig.fee_amount,
-          isWithinGracePeriod: true
-        };
-      }
-      
-      // Calculate outstanding amount
-      const outstandingAmount = amount - amountPaid;
-      
-      if (outstandingAmount <= 0) {
-        return {
-          lateFeeAmount: 0,
-          daysLate,
-          gracePeriod: lateFeeConfig.grace_period_days,
-          feeType: lateFeeConfig.fee_type,
-          feeRate: lateFeeConfig.fee_amount,
-          isWithinGracePeriod: false,
-          isPaid: true
-        };
-      }
-      
-      // Calculate late fee
-      let lateFeeAmount = 0;
-      
-      if (lateFeeConfig.fee_type === 'percentage') {
-        lateFeeAmount = outstandingAmount * (lateFeeConfig.fee_amount / 100);
-        
-        // Apply maximum fee if configured
-        if (lateFeeConfig.maximum_fee && lateFeeAmount > lateFeeConfig.maximum_fee) {
-          lateFeeAmount = lateFeeConfig.maximum_fee;
-        }
-      } else if (lateFeeConfig.fee_type === 'fixed') {
-        lateFeeAmount = lateFeeConfig.fee_amount;
-      }
-      
-      return {
-        lateFeeAmount,
-        daysLate,
-        gracePeriod: lateFeeConfig.grace_period_days,
-        feeType: lateFeeConfig.fee_type,
-        feeRate: lateFeeConfig.fee_amount,
-        maximumFee: lateFeeConfig.maximum_fee,
-        isWithinGracePeriod: false,
-        isPaid: false,
-        outstandingAmount
-      };
-    } catch (error) {
-      console.error('Error calculating late fee:', error);
-      throw new Error('Failed to calculate late fee');
-    }
-  }
-
-  /**
-   * Calculate and apply late fee for an overdue payment
-   * 
-   * @param {Object} client - Database client for transaction
-   * @param {number} propertyId - The ID of the property
-   * @param {number} leaseId - The ID of the lease
-   * @param {number} recurringPaymentId - The ID of the recurring payment
-   * @param {number} fullAmount - The full payment amount
-   * @param {number} amountPaid - The amount already paid
-   * @param {Date} dueDate - The payment due date
-   * @param {Date} asOfDate - The date to calculate late fee as of
-   * @param {number} userId - The ID of the user applying the late fee
-   * @returns {Promise<Object>} - Applied late fee object
-   */
-  async calculateAndApplyLateFee(
-    client,
-    propertyId,
-    leaseId,
-    recurringPaymentId,
-    fullAmount,
-    amountPaid,
-    dueDate,
-    asOfDate,
-    userId
-  ) {
-    try {
-      // Calculate late fee
-      const lateFeeData = await this.calculateLateFee({
-        propertyId,
-        amount: fullAmount,
-        amountPaid,
-        dueDate,
-        asOfDate
-      });
-      
-      // Skip if no late fee or within grace period
-      if (lateFeeData.lateFeeAmount <= 0 || lateFeeData.isWithinGracePeriod || lateFeeData.isPaid) {
-        return null;
-      }
-      
-      // Get late fee configuration
-      const lateFeeConfig = await this.getLateFeeConfiguration(propertyId);
-      
-      if (!lateFeeConfig) {
-        return null;
-      }
-      
-      // Check if late fee has already been applied for this period
-      const existingLateFeeQuery = `
-        SELECT COUNT(*) AS count
-        FROM late_fees
-        WHERE lease_id = $1
-        AND recurring_payment_id = $2
-        AND due_date = $3
-        AND status != 'cancelled'
-      `;
-      
-      const existingLateFeeResult = await client.query(existingLateFeeQuery, [
-        leaseId,
-        recurringPaymentId,
-        dueDate
-      ]);
-      
-      const existingLateFeeCount = parseInt(existingLateFeeResult.rows[0].count);
-      
-      // Skip if late fee already applied and not compounding
-      if (existingLateFeeCount > 0 && !lateFeeConfig.is_compounding) {
-        return null;
-      }
-      
-      // Get lease details
-      const leaseQuery = `
-        SELECT 
-          l.tenant_id,
-          l.unit_id,
-          u.property_id
-        FROM leases l
-        JOIN units u ON l.unit_id = u.id
-        WHERE l.id = $1
-      `;
-      
-      const leaseResult = await client.query(leaseQuery, [leaseId]);
-      
-      if (leaseResult.rows.length === 0) {
-        throw new Error('Lease not found');
-      }
-      
-      const lease = leaseResult.rows[0];
-      
-      // Apply late fee
-      const insertLateFeeQuery = `
-        INSERT INTO late_fees (
-          lease_id,
-          tenant_id,
-          unit_id,
+      // Insert new configuration
+      const insertQuery = `
+        INSERT INTO late_fee_configurations (
           property_id,
-          late_fee_config_id,
-          recurring_payment_id,
-          amount,
-          due_date,
-          days_late,
-          status,
-          created_by,
+          fee_type,
+          fee_amount,
+          grace_period_days,
+          maximum_fee,
+          is_compounding,
+          is_active,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, NOW(), NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING *
       `;
       
-      const insertLateFeeValues = [
-        leaseId,
-        lease.tenant_id,
-        lease.unit_id,
-        lease.property_id,
-        lateFeeConfig.id,
-        recurringPaymentId,
-        lateFeeData.lateFeeAmount,
-        dueDate,
-        lateFeeData.daysLate,
-        userId
+      const insertParams = [
+        propertyId,
+        feeType,
+        feeAmount,
+        gracePeriodDays,
+        maximumFee,
+        isCompounding
       ];
       
-      const insertLateFeeResult = await client.query(insertLateFeeQuery, insertLateFeeValues);
-      const lateFee = insertLateFeeResult.rows[0];
+      const result = await client.query(insertQuery, insertParams);
+      const configuration = result.rows[0];
       
-      return lateFee;
-    } catch (error) {
-      console.error('Error calculating and applying late fee:', error);
-      throw new Error('Failed to calculate and apply late fee');
-    }
-  }
-
-  /**
-   * Get late fees for a lease
-   * 
-   * @param {number} leaseId - The ID of the lease
-   * @param {Object} options - Optional parameters
-   * @param {string} options.status - Filter by status ('pending', 'paid', 'waived', 'cancelled', 'all')
-   * @param {Date} options.startDate - Start date for filtering
-   * @param {Date} options.endDate - End date for filtering
-   * @returns {Promise<Array>} - Array of late fee objects
-   */
-  async getLateFees(leaseId, options = {}) {
-    try {
-      const {
-        status = 'all',
-        startDate = null,
-        endDate = null
-      } = options;
-      
-      let query = `
-        SELECT 
-          lf.*,
-          lfc.fee_type,
-          lfc.fee_amount,
-          lfc.grace_period_days,
-          lfc.maximum_fee,
-          lfc.is_compounding,
-          CONCAT(t.first_name, ' ', t.last_name) AS tenant_name,
-          u.unit_number,
-          p.name AS property_name,
-          CONCAT(wu.first_name, ' ', wu.last_name) AS waived_by_name,
-          CONCAT(cu.first_name, ' ', cu.last_name) AS created_by_name
-        FROM late_fees lf
-        JOIN late_fee_configurations lfc ON lf.late_fee_config_id = lfc.id
-        JOIN tenants t ON lf.tenant_id = t.id
-        JOIN units u ON lf.unit_id = u.id
-        JOIN properties p ON lf.property_id = p.id
-        LEFT JOIN users wu ON lf.waived_by = wu.id
-        LEFT JOIN users cu ON lf.created_by = cu.id
-        WHERE lf.lease_id = $1
-      `;
-      
-      const params = [leaseId];
-      let paramIndex = 2;
-      
-      if (status !== 'all') {
-        query += ` AND lf.status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-      
-      if (startDate) {
-        query += ` AND lf.due_date >= $${paramIndex}`;
-        params.push(startDate);
-        paramIndex++;
-      }
-      
-      if (endDate) {
-        query += ` AND lf.due_date <= $${paramIndex}`;
-        params.push(endDate);
-        paramIndex++;
-      }
-      
-      query += ` ORDER BY lf.due_date DESC, lf.created_at DESC`;
-      
-      const { rows } = await this.pool.query(query, params);
-      
-      return rows;
-    } catch (error) {
-      console.error('Error getting late fees:', error);
-      throw new Error('Failed to get late fees');
-    }
-  }
-
-  /**
-   * Get late fees for a property
-   * 
-   * @param {number} propertyId - The ID of the property
-   * @param {Object} options - Optional parameters
-   * @param {string} options.status - Filter by status ('pending', 'paid', 'waived', 'cancelled', 'all')
-   * @param {Date} options.startDate - Start date for filtering
-   * @param {Date} options.endDate - End date for filtering
-   * @returns {Promise<Array>} - Array of late fee objects
-   */
-  async getLateFeesByProperty(propertyId, options = {}) {
-    try {
-      const {
-        status = 'all',
-        startDate = null,
-        endDate = null
-      } = options;
-      
-      let query = `
-        SELECT 
-          lf.*,
-          lfc.fee_type,
-          lfc.fee_amount,
-          lfc.grace_period_days,
-          lfc.maximum_fee,
-          lfc.is_compounding,
-          CONCAT(t.first_name, ' ', t.last_name) AS tenant_name,
-          u.unit_number,
-          p.name AS property_name,
-          CONCAT(wu.first_name, ' ', wu.last_name) AS waived_by_name,
-          CONCAT(cu.first_name, ' ', cu.last_name) AS created_by_name
-        FROM late_fees lf
-        JOIN late_fee_configurations lfc ON lf.late_fee_config_id = lfc.id
-        JOIN tenants t ON lf.tenant_id = t.id
-        JOIN units u ON lf.unit_id = u.id
-        JOIN properties p ON lf.property_id = p.id
-        LEFT JOIN users wu ON lf.waived_by = wu.id
-        LEFT JOIN users cu ON lf.created_by = cu.id
-        WHERE lf.property_id = $1
-      `;
-      
-      const params = [propertyId];
-      let paramIndex = 2;
-      
-      if (status !== 'all') {
-        query += ` AND lf.status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-      
-      if (startDate) {
-        query += ` AND lf.due_date >= $${paramIndex}`;
-        params.push(startDate);
-        paramIndex++;
-      }
-      
-      if (endDate) {
-        query += ` AND lf.due_date <= $${paramIndex}`;
-        params.push(endDate);
-        paramIndex++;
-      }
-      
-      query += ` ORDER BY lf.due_date DESC, lf.created_at DESC`;
-      
-      const { rows } = await this.pool.query(query, params);
-      
-      return rows;
-    } catch (error) {
-      console.error('Error getting late fees by property:', error);
-      throw new Error('Failed to get late fees by property');
-    }
-  }
-
-  /**
-   * Mark late fee as paid
-   * 
-   * @param {number} lateFeeId - The ID of the late fee
-   * @param {number} userId - The ID of the user marking the late fee as paid
-   * @returns {Promise<Object>} - Updated late fee object
-   */
-  async markLateFeeAsPaid(lateFeeId, userId) {
-    const client = await this.pool.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Update late fee status
-      const updateQuery = `
-        UPDATE late_fees
-        SET status = 'paid', updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
-      `;
-      
-      const updateResult = await client.query(updateQuery, [lateFeeId]);
-      
-      if (updateResult.rows.length === 0) {
-        throw new Error('Late fee not found');
-      }
-      
-      const lateFee = updateResult.rows[0];
-      
-      // Send notification
-      await this.notificationService.sendLateFeePaymentConfirmation(
-        lateFee.tenant_id,
-        lateFee.amount,
-        lateFee.due_date
-      );
-      
+      // Commit transaction
       await client.query('COMMIT');
       
-      return lateFee;
+      return configuration;
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error('Error marking late fee as paid:', error);
-      throw new Error('Failed to mark late fee as paid');
+      console.error('Error saving late fee configuration:', error);
+      throw new Error('Failed to save late fee configuration');
     } finally {
       client.release();
     }
   }
 
   /**
-   * Waive late fee
-   * 
+   * Calculate late fee for a payment
+   * @param {Object} paymentData - The payment data
+   * @param {number} paymentData.amount - The payment amount
+   * @param {number} paymentData.daysLate - The number of days late
+   * @param {Object} configuration - The late fee configuration
+   * @returns {number} - The calculated late fee amount
+   */
+  calculateLateFee(paymentData, configuration) {
+    const { amount, daysLate } = paymentData;
+    
+    // No late fee if not past grace period
+    if (daysLate <= configuration.grace_period_days) {
+      return 0;
+    }
+    
+    let lateFee = 0;
+    
+    if (configuration.fee_type === 'percentage') {
+      lateFee = amount * (configuration.fee_amount / 100);
+      
+      // Apply maximum fee if set
+      if (configuration.maximum_fee && lateFee > configuration.maximum_fee) {
+        lateFee = configuration.maximum_fee;
+      }
+    } else { // fixed amount
+      lateFee = configuration.fee_amount;
+    }
+    
+    // Apply compounding if configured
+    if (configuration.is_compounding) {
+      const effectiveDaysLate = daysLate - configuration.grace_period_days;
+      lateFee = lateFee * effectiveDaysLate;
+      
+      // Apply maximum fee if set
+      if (configuration.maximum_fee && lateFee > configuration.maximum_fee) {
+        lateFee = configuration.maximum_fee;
+      }
+    }
+    
+    return lateFee;
+  }
+
+  /**
+   * Get all late fees for a lease
+   * @param {number} leaseId - The ID of the lease
+   * @param {Object} options - Optional parameters
+   * @param {boolean} options.includePaid - Whether to include paid late fees (defaults to false)
+   * @returns {Promise<Array>} - Array of late fees
+   */
+  async getLateFees(leaseId, options = {}) {
+    const { includePaid = false } = options;
+
+    if (!leaseId) {
+      throw new Error('Lease ID is required');
+    }
+
+    let query = `
+      SELECT 
+        lf.*,
+        rp.payment_type,
+        rp.due_day,
+        p.id as payment_id,
+        p.payment_date,
+        p.payment_method,
+        p.reference_number
+      FROM 
+        late_fees lf
+      LEFT JOIN 
+        recurring_payments rp ON lf.recurring_payment_id = rp.id
+      LEFT JOIN 
+        payments p ON lf.payment_id = p.id
+      WHERE 
+        lf.lease_id = $1
+    `;
+    
+    if (!includePaid) {
+      query += ' AND lf.is_paid = false';
+    }
+    
+    query += ' ORDER BY lf.created_at DESC';
+
+    try {
+      const result = await database.query(query, [leaseId]);
+      return result.rows;
+    } catch (error) {
+      console.error('Error getting late fees:', error);
+      throw new Error('Failed to retrieve late fees');
+    }
+  }
+
+  /**
+   * Record payment for a late fee
    * @param {number} lateFeeId - The ID of the late fee
-   * @param {string} reason - Reason for waiving the late fee
-   * @param {number} userId - The ID of the user waiving the late fee
-   * @returns {Promise<Object>} - Updated late fee object
+   * @param {number} paymentId - The ID of the payment
+   * @param {Date} paymentDate - The payment date
+   * @returns {Promise<Object>} - The updated late fee
+   */
+  async recordLateFeePayment(lateFeeId, paymentId, paymentDate = new Date()) {
+    if (!lateFeeId || !paymentId) {
+      throw new Error('Late fee ID and payment ID are required');
+    }
+
+    const query = `
+      UPDATE late_fees
+      SET 
+        is_paid = true,
+        paid_date = $1,
+        payment_id = $2,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `;
+
+    try {
+      const result = await database.query(query, [paymentDate, paymentId, lateFeeId]);
+      
+      if (result.rows.length === 0) {
+        throw new Error(`Late fee with ID ${lateFeeId} not found`);
+      }
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error recording late fee payment:', error);
+      throw new Error('Failed to record late fee payment');
+    }
+  }
+
+  /**
+   * Waive a late fee
+   * @param {number} lateFeeId - The ID of the late fee
+   * @param {string} reason - The reason for waiving the fee
+   * @param {number} userId - The ID of the user waiving the fee
+   * @returns {Promise<Object>} - The waived late fee
    */
   async waiveLateFee(lateFeeId, reason, userId) {
-    const client = await this.pool.connect();
+    if (!lateFeeId || !reason || !userId) {
+      throw new Error('Late fee ID, reason, and user ID are required');
+    }
+
+    // Begin transaction
+    const client = await database.getClient();
     
     try {
       await client.query('BEGIN');
       
-      // Update late fee status
+      // Update late fee
       const updateQuery = `
         UPDATE late_fees
         SET 
-          status = 'waived', 
-          waived_reason = $1, 
-          waived_by = $2, 
-          waived_at = NOW(), 
-          updated_at = NOW()
+          is_waived = true,
+          waive_reason = $1,
+          waived_by = $2,
+          waived_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
         WHERE id = $3
         RETURNING *
       `;
@@ -625,19 +300,43 @@ class LateFeeService {
       const updateResult = await client.query(updateQuery, [reason, userId, lateFeeId]);
       
       if (updateResult.rows.length === 0) {
-        throw new Error('Late fee not found');
+        throw new Error(`Late fee with ID ${lateFeeId} not found`);
       }
       
       const lateFee = updateResult.rows[0];
       
-      // Send notification
-      await this.notificationService.sendLateFeeWaivedNotification(
-        lateFee.tenant_id,
-        lateFee.amount,
-        lateFee.due_date,
-        reason
-      );
+      // Log waiver action
+      const logQuery = `
+        INSERT INTO activity_logs (
+          entity_type,
+          entity_id,
+          action,
+          details,
+          user_id,
+          created_at
+        )
+        VALUES (
+          'late_fee',
+          $1,
+          'waive',
+          $2,
+          $3,
+          CURRENT_TIMESTAMP
+        )
+      `;
       
+      const logParams = [
+        lateFeeId,
+        JSON.stringify({
+          amount: lateFee.amount,
+          reason: reason
+        }),
+        userId
+      ];
+      
+      await client.query(logQuery, logParams);
+      
+      // Commit transaction
       await client.query('COMMIT');
       
       return lateFee;
@@ -651,361 +350,204 @@ class LateFeeService {
   }
 
   /**
-   * Cancel late fee
-   * 
-   * @param {number} lateFeeId - The ID of the late fee
-   * @param {number} userId - The ID of the user cancelling the late fee
-   * @returns {Promise<Object>} - Updated late fee object
-   */
-  async cancelLateFee(lateFeeId, userId) {
-    try {
-      // Update late fee status
-      const updateQuery = `
-        UPDATE late_fees
-        SET status = 'cancelled', updated_at = NOW()
-        WHERE id = $1
-        RETURNING *
-      `;
-      
-      const updateResult = await this.pool.query(updateQuery, [lateFeeId]);
-      
-      if (updateResult.rows.length === 0) {
-        throw new Error('Late fee not found');
-      }
-      
-      return updateResult.rows[0];
-    } catch (error) {
-      console.error('Error cancelling late fee:', error);
-      throw new Error('Failed to cancel late fee');
-    }
-  }
-
-  /**
-   * Generate late fee report for a property
-   * 
+   * Get late fee statistics for a property
    * @param {number} propertyId - The ID of the property
    * @param {Object} options - Optional parameters
-   * @param {Date} options.startDate - Start date for the report (default: first day of current month)
-   * @param {Date} options.endDate - End date for the report (default: last day of current month)
-   * @returns {Promise<Object>} - Late fee report object
+   * @param {Date} options.startDate - The start date for statistics
+   * @param {Date} options.endDate - The end date for statistics
+   * @returns {Promise<Object>} - Late fee statistics
    */
-  async generateLateFeeReport(propertyId, options = {}) {
+  async getLateFeeStatistics(propertyId, options = {}) {
+    const {
+      startDate = new Date(new Date().getFullYear(), 0, 1), // Default to start of current year
+      endDate = new Date()
+    } = options;
+
+    if (!propertyId) {
+      throw new Error('Property ID is required');
+    }
+
     try {
-      // Set default options
-      const defaultOptions = {
-        startDate: moment().startOf('month').toDate(),
-        endDate: moment().endOf('month').toDate()
-      };
-      
-      const opts = { ...defaultOptions, ...options };
-      
-      // Get property details
-      const propertyQuery = `
-        SELECT id, name, address, city, state, zip_code
-        FROM properties
-        WHERE id = $1
+      // Get total late fees assessed
+      const assessedQuery = `
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        WHERE 
+          l.property_id = $1
+          AND lf.created_at BETWEEN $2 AND $3
       `;
       
-      const propertyResult = await this.pool.query(propertyQuery, [propertyId]);
+      const assessedResult = await database.query(assessedQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
       
-      if (propertyResult.rows.length === 0) {
-        throw new Error('Property not found');
-      }
+      const assessed = assessedResult.rows[0];
       
-      const property = propertyResult.rows[0];
+      // Get total late fees collected
+      const collectedQuery = `
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        WHERE 
+          l.property_id = $1
+          AND lf.is_paid = true
+          AND lf.paid_date BETWEEN $2 AND $3
+      `;
       
-      // Get late fee configuration
-      const lateFeeConfig = await this.getLateFeeConfiguration(propertyId);
+      const collectedResult = await database.query(collectedQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
       
-      // Get late fees for the period
-      const lateFees = await this.getLateFeesByProperty(propertyId, {
-        startDate: opts.startDate,
-        endDate: opts.endDate
-      });
+      const collected = collectedResult.rows[0];
       
-      // Calculate summary statistics
-      const totalLateFees = lateFees.length;
-      const pendingLateFees = lateFees.filter(fee => fee.status === 'pending').length;
-      const paidLateFees = lateFees.filter(fee => fee.status === 'paid').length;
-      const waivedLateFees = lateFees.filter(fee => fee.status === 'waived').length;
-      const cancelledLateFees = lateFees.filter(fee => fee.status === 'cancelled').length;
+      // Get total late fees waived
+      const waivedQuery = `
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        WHERE 
+          l.property_id = $1
+          AND lf.is_waived = true
+          AND lf.waived_at BETWEEN $2 AND $3
+      `;
       
-      const totalLateFeeAmount = lateFees.reduce((sum, fee) => sum + parseFloat(fee.amount), 0);
-      const pendingLateFeeAmount = lateFees
-        .filter(fee => fee.status === 'pending')
-        .reduce((sum, fee) => sum + parseFloat(fee.amount), 0);
-      const paidLateFeeAmount = lateFees
-        .filter(fee => fee.status === 'paid')
-        .reduce((sum, fee) => sum + parseFloat(fee.amount), 0);
-      const waivedLateFeeAmount = lateFees
-        .filter(fee => fee.status === 'waived')
-        .reduce((sum, fee) => sum + parseFloat(fee.amount), 0);
+      const waivedResult = await database.query(waivedQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
       
-      // Group late fees by unit
-      const lateFeesByUnit = {};
+      const waived = waivedResult.rows[0];
       
-      for (const fee of lateFees) {
-        if (!lateFeesByUnit[fee.unit_id]) {
-          lateFeesByUnit[fee.unit_id] = {
-            unitId: fee.unit_id,
-            unitNumber: fee.unit_number,
-            tenantName: fee.tenant_name,
-            lateFees: [],
-            totalAmount: 0,
-            pendingAmount: 0,
-            paidAmount: 0,
-            waivedAmount: 0
-          };
-        }
-        
-        lateFeesByUnit[fee.unit_id].lateFees.push(fee);
-        lateFeesByUnit[fee.unit_id].totalAmount += parseFloat(fee.amount);
-        
-        if (fee.status === 'pending') {
-          lateFeesByUnit[fee.unit_id].pendingAmount += parseFloat(fee.amount);
-        } else if (fee.status === 'paid') {
-          lateFeesByUnit[fee.unit_id].paidAmount += parseFloat(fee.amount);
-        } else if (fee.status === 'waived') {
-          lateFeesByUnit[fee.unit_id].waivedAmount += parseFloat(fee.amount);
-        }
-      }
+      // Get outstanding late fees
+      const outstandingQuery = `
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        WHERE 
+          l.property_id = $1
+          AND lf.is_paid = false
+          AND lf.is_waived = false
+          AND lf.created_at BETWEEN $2 AND $3
+      `;
       
-      // Construct the report
-      const report = {
-        property,
-        reportPeriod: {
-          startDate: opts.startDate,
-          endDate: opts.endDate
-        },
-        lateFeeConfiguration: lateFeeConfig,
-        summary: {
-          totalLateFees,
-          pendingLateFees,
-          paidLateFees,
-          waivedLateFees,
-          cancelledLateFees,
-          totalLateFeeAmount,
-          pendingLateFeeAmount,
-          paidLateFeeAmount,
-          waivedLateFeeAmount,
-          collectionRate: totalLateFeeAmount > 0 ? (paidLateFeeAmount / totalLateFeeAmount) * 100 : 0
-        },
-        unitSummaries: Object.values(lateFeesByUnit).sort((a, b) => a.unitNumber.localeCompare(b.unitNumber)),
-        lateFees: lateFees.sort((a, b) => {
-          // Sort by unit number, then by due date (newest first)
-          const unitCompare = a.unit_number.localeCompare(b.unit_number);
-          if (unitCompare !== 0) return unitCompare;
-          return new Date(b.due_date) - new Date(a.due_date);
-        })
-      };
+      const outstandingResult = await database.query(outstandingQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
       
-      return report;
-    } catch (error) {
-      console.error('Error generating late fee report:', error);
-      throw new Error('Failed to generate late fee report');
-    }
-  }
-
-  /**
-   * Send late fee notification
-   * 
-   * @param {number} tenantId - The ID of the tenant
-   * @param {number} lateFeeId - The ID of the late fee
-   * @param {number} amount - The late fee amount
-   * @param {Date} dueDate - The original payment due date
-   * @param {number} daysLate - The number of days the payment is late
-   * @returns {Promise<Object>} - Notification result
-   */
-  async sendLateFeeNotification(tenantId, lateFeeId, amount, dueDate, daysLate) {
-    try {
-      // Get tenant details
+      const outstanding = outstandingResult.rows[0];
+      
+      // Get monthly breakdown
+      const monthlyQuery = `
+        SELECT 
+          DATE_TRUNC('month', lf.created_at) as month,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN lf.is_paid THEN 1 END) as paid_count,
+          COALESCE(SUM(CASE WHEN lf.is_paid THEN amount ELSE 0 END), 0) as paid_amount,
+          COUNT(CASE WHEN lf.is_waived THEN 1 END) as waived_count,
+          COALESCE(SUM(CASE WHEN lf.is_waived THEN amount ELSE 0 END), 0) as waived_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        WHERE 
+          l.property_id = $1
+          AND lf.created_at BETWEEN $2 AND $3
+        GROUP BY 
+          DATE_TRUNC('month', lf.created_at)
+        ORDER BY 
+          month
+      `;
+      
+      const monthlyResult = await database.query(monthlyQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
+      
+      const monthly = monthlyResult.rows;
+      
+      // Get tenant breakdown
       const tenantQuery = `
         SELECT 
-          t.id,
-          t.first_name,
-          t.last_name,
-          t.email,
-          t.phone,
-          u.unit_number,
-          p.name AS property_name
-        FROM tenants t
-        JOIN lease_tenants lt ON t.id = lt.tenant_id
-        JOIN leases l ON lt.lease_id = l.id
-        JOIN units u ON l.unit_id = u.id
-        JOIN properties p ON u.property_id = p.id
-        WHERE t.id = $1
-        AND l.status = 'active'
-        LIMIT 1
+          l.tenant_id,
+          CONCAT(t.first_name, ' ', t.last_name) as tenant_name,
+          COUNT(*) as count,
+          COALESCE(SUM(lf.amount), 0) as total_amount,
+          COUNT(CASE WHEN lf.is_paid THEN 1 END) as paid_count,
+          COALESCE(SUM(CASE WHEN lf.is_paid THEN lf.amount ELSE 0 END), 0) as paid_amount,
+          COUNT(CASE WHEN lf.is_waived THEN 1 END) as waived_count,
+          COALESCE(SUM(CASE WHEN lf.is_waived THEN lf.amount ELSE 0 END), 0) as waived_amount,
+          COUNT(CASE WHEN NOT lf.is_paid AND NOT lf.is_waived THEN 1 END) as outstanding_count,
+          COALESCE(SUM(CASE WHEN NOT lf.is_paid AND NOT lf.is_waived THEN lf.amount ELSE 0 END), 0) as outstanding_amount
+        FROM 
+          late_fees lf
+        JOIN 
+          leases l ON lf.lease_id = l.id
+        JOIN 
+          tenants t ON l.tenant_id = t.id
+        WHERE 
+          l.property_id = $1
+          AND lf.created_at BETWEEN $2 AND $3
+        GROUP BY 
+          l.tenant_id, tenant_name
+        ORDER BY 
+          total_amount DESC
       `;
       
-      const tenantResult = await this.pool.query(tenantQuery, [tenantId]);
+      const tenantResult = await database.query(tenantQuery, [
+        propertyId,
+        startDate,
+        endDate
+      ]);
       
-      if (tenantResult.rows.length === 0) {
-        throw new Error('Tenant not found');
-      }
+      const tenants = tenantResult.rows;
       
-      const tenant = tenantResult.rows[0];
-      
-      // Send notification
-      const notificationResult = await this.notificationService.sendLateFeeNotification(
-        tenant.id,
-        tenant.email,
-        tenant.phone,
-        lateFeeId,
-        amount,
-        dueDate,
-        daysLate,
-        tenant.unit_number,
-        tenant.property_name
-      );
-      
-      return notificationResult;
-    } catch (error) {
-      console.error('Error sending late fee notification:', error);
-      throw new Error('Failed to send late fee notification');
-    }
-  }
-
-  /**
-   * Process late fees for all properties
-   * 
-   * @param {number} userId - The ID of the user processing late fees
-   * @returns {Promise<Object>} - Processing results
-   */
-  async processLateFees(userId) {
-    try {
-      // Get all properties
-      const propertiesQuery = `
-        SELECT id, name
-        FROM properties
-        WHERE is_active = true
-      `;
-      
-      const propertiesResult = await this.pool.query(propertiesQuery);
-      const properties = propertiesResult.rows;
-      
-      const results = {
-        totalProperties: properties.length,
-        propertiesProcessed: 0,
-        totalLateFees: 0,
-        totalLateFeeAmount: 0,
-        propertyResults: []
-      };
-      
-      // Process each property
-      for (const property of properties) {
-        try {
-          // Get all overdue payments for the property
-          const overduePaymentsQuery = `
-            SELECT 
-              rp.id AS recurring_payment_id,
-              rp.lease_id,
-              rp.amount,
-              DATE_TRUNC('month', CURRENT_DATE) + ((rp.due_day - 1) || ' days')::interval AS due_date,
-              (SELECT COALESCE(SUM(amount), 0) FROM transactions 
-               WHERE recurring_payment_id = rp.id 
-               AND transaction_type = 'payment'
-               AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE)
-               AND transaction_date <= CURRENT_DATE) AS amount_paid
-            FROM recurring_payments rp
-            JOIN leases l ON rp.lease_id = l.id
-            JOIN units u ON l.unit_id = u.id
-            WHERE u.property_id = $1
-            AND rp.is_active = true
-            AND l.status = 'active'
-            AND rp.payment_type = 'rent'
-            AND DATE_TRUNC('month', CURRENT_DATE) + ((rp.due_day - 1) || ' days')::interval < CURRENT_DATE
-            AND (SELECT COALESCE(SUM(amount), 0) FROM transactions 
-                 WHERE recurring_payment_id = rp.id 
-                 AND transaction_type = 'payment'
-                 AND transaction_date >= DATE_TRUNC('month', CURRENT_DATE)
-                 AND transaction_date <= CURRENT_DATE) < rp.amount
-          `;
-          
-          const overduePaymentsResult = await this.pool.query(overduePaymentsQuery, [property.id]);
-          const overduePayments = overduePaymentsResult.rows;
-          
-          const propertyResult = {
-            propertyId: property.id,
-            propertyName: property.name,
-            overduePayments: overduePayments.length,
-            lateFees: 0,
-            lateFeeAmount: 0,
-            errors: []
-          };
-          
-          // Process each overdue payment
-          for (const payment of overduePayments) {
-            try {
-              const client = await this.pool.connect();
-              
-              try {
-                await client.query('BEGIN');
-                
-                // Calculate and apply late fee
-                const lateFee = await this.calculateAndApplyLateFee(
-                  client,
-                  property.id,
-                  payment.lease_id,
-                  payment.recurring_payment_id,
-                  payment.amount,
-                  payment.amount_paid,
-                  payment.due_date,
-                  new Date(),
-                  userId
-                );
-                
-                if (lateFee) {
-                  propertyResult.lateFees++;
-                  propertyResult.lateFeeAmount += parseFloat(lateFee.amount);
-                  
-                  // Send notification
-                  await this.sendLateFeeNotification(
-                    lateFee.tenant_id,
-                    lateFee.id,
-                    lateFee.amount,
-                    lateFee.due_date,
-                    lateFee.days_late
-                  );
-                }
-                
-                await client.query('COMMIT');
-              } catch (error) {
-                await client.query('ROLLBACK');
-                throw error;
-              } finally {
-                client.release();
-              }
-            } catch (error) {
-              console.error(`Error processing late fee for payment ${payment.recurring_payment_id}:`, error);
-              propertyResult.errors.push({
-                recurringPaymentId: payment.recurring_payment_id,
-                leaseId: payment.lease_id,
-                error: error.message
-              });
-            }
-          }
-          
-          results.propertiesProcessed++;
-          results.totalLateFees += propertyResult.lateFees;
-          results.totalLateFeeAmount += propertyResult.lateFeeAmount;
-          results.propertyResults.push(propertyResult);
-        } catch (error) {
-          console.error(`Error processing late fees for property ${property.id}:`, error);
-          results.propertyResults.push({
-            propertyId: property.id,
-            propertyName: property.name,
-            error: error.message
-          });
-        }
-      }
-      
-      return results;
-    } catch (error) {
-      console.error('Error processing late fees:', error);
-      throw new Error('Failed to process late fees');
-    }
-  }
-}
-
-module.exports = LateFeeService;
+      return {
+        period: {
+          start_date: startDate,
+          end_date: endDate
+        },
+        summary: {
+          assessed: {
+            count: parseInt(assessed.total_count),
+            amount: parseFloat(assessed.total_amount)
+          },
+          collected: {
+            count: parseInt(collected.total_count),
+            amount: parseFloat(collected.total_amount)
+          },
+          waived: {
+            count: parseInt(waived.total_count),
+            amount: parseFloat(waived.total_amount)
+          },
+          outstanding: {
+            count: parseInt(outstanding.total_count),
+            amount: parseFloat(outstanding.total_amount)
+          },
+          collection_rate: assessed.total_amount > 0 
+           <response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
