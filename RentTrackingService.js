@@ -6,7 +6,7 @@
  * calculating late fees, and generating rent roll reports.
  */
 
-const database = require('../utils/database');
+const database = require('../../../utils/database');
 const LateFeeService = require('./LateFeeService');
 
 class RentTrackingService {
@@ -298,57 +298,37 @@ class RentTrackingService {
       `;
       
       const lateFeeResult = await client.query(lateFeeQuery, [leaseId]);
-      const outstandingLateFees = lateFeeResult.rows;
       
-      let remainingAmount = parseFloat(amount);
-      const paidLateFees = [];
-      
-      // Apply payment to late fees first
-      for (const lateFee of outstandingLateFees) {
-        if (remainingAmount <= 0) break;
+      if (lateFeeResult.rows.length > 0) {
+        let remainingAmount = parseFloat(amount);
         
-        const lateFeeAmount = parseFloat(lateFee.amount);
-        
-        if (remainingAmount >= lateFeeAmount) {
-          // Pay off the entire late fee
-          await client.query(
-            'UPDATE late_fees SET is_paid = true, paid_date = $1, payment_id = $2 WHERE id = $3',
-            [paymentDate, payment.id, lateFee.id]
-          );
+        // Apply payment to late fees first
+        for (const lateFee of lateFeeResult.rows) {
+          if (remainingAmount <= 0) break;
           
-          remainingAmount -= lateFeeAmount;
-          paidLateFees.push({
-            id: lateFee.id,
-            amount: lateFeeAmount,
-            fully_paid: true
-          });
-        } else {
-          // Partially pay the late fee
-          const updatedAmount = lateFeeAmount - remainingAmount;
-          await client.query(
-            'UPDATE late_fees SET amount = $1 WHERE id = $2',
-            [updatedAmount, lateFee.id]
-          );
+          const lateFeeAmount = parseFloat(lateFee.amount);
+          const amountToApply = Math.min(lateFeeAmount, remainingAmount);
           
-          paidLateFees.push({
-            id: lateFee.id,
-            amount: remainingAmount,
-            fully_paid: false
-          });
+          if (amountToApply >= lateFeeAmount) {
+            // Mark late fee as paid
+            await client.query(
+              'UPDATE late_fees SET is_paid = true, paid_date = $1, payment_id = $2 WHERE id = $3',
+              [paymentDate, payment.id, lateFee.id]
+            );
+          } else {
+            // Partially pay late fee
+            await client.query(
+              'UPDATE late_fees SET amount = amount - $1 WHERE id = $2',
+              [amountToApply, lateFee.id]
+            );
+          }
           
-          remainingAmount = 0;
-          break;
+          remainingAmount -= amountToApply;
         }
       }
       
-      // Commit transaction
       await client.query('COMMIT');
-      
-      return {
-        payment,
-        paid_late_fees: paidLateFees,
-        remaining_amount: remainingAmount
-      };
+      return payment;
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error recording rent payment:', error);
@@ -359,159 +339,157 @@ class RentTrackingService {
   }
 
   /**
-   * Calculate late fees for overdue payments
-   * @param {number} propertyId - The ID of the property (optional, if not provided will check all properties)
-   * @param {Date} asOfDate - The date to calculate late fees as of (defaults to current date)
-   * @returns {Promise<Array>} - Array of calculated late fees
+   * Generate rent roll report
+   * @param {number} propertyId - The ID of the property
+   * @param {Object} options - Optional parameters
+   * @param {Date} options.asOfDate - The date to generate the report for (defaults to current date)
+   * @returns {Promise<Object>} - Rent roll report data
    */
-  async calculateLateFees(propertyId, asOfDate = new Date()) {
-    // Get all active leases with recurring payments
-    let leaseQuery = `
+  async generateRentRoll(propertyId, options = {}) {
+    const { asOfDate = new Date() } = options;
+    
+    const query = `
       SELECT 
-        l.id as lease_id,
-        l.property_id,
-        rp.id as recurring_payment_id,
-        rp.amount as payment_amount,
-        rp.due_day,
-        lfc.id as late_fee_config_id,
-        lfc.fee_type,
-        lfc.fee_amount,
-        lfc.grace_period_days,
-        lfc.maximum_fee,
-        lfc.is_compounding
+        p.id as property_id,
+        p.name as property_name,
+        p.address,
+        p.city,
+        p.state,
+        p.zip_code,
+        json_agg(json_build_object(
+          'unit_id', u.id,
+          'unit_number', u.unit_number,
+          'unit_type', u.unit_type,
+          'square_feet', u.square_feet,
+          'bedrooms', u.bedrooms,
+          'bathrooms', u.bathrooms,
+          'lease_id', l.id,
+          'lease_start', l.start_date,
+          'lease_end', l.end_date,
+          'rent_amount', l.rent_amount,
+          'security_deposit', l.security_deposit,
+          'tenant_id', t.id,
+          'tenant_name', CONCAT(t.first_name, ' ', t.last_name),
+          'tenant_email', t.email,
+          'tenant_phone', t.phone,
+          'move_in_date', l.start_date,
+          'recurring_payments', (
+            SELECT json_agg(json_build_object(
+              'id', rp.id,
+              'payment_type', rp.payment_type,
+              'amount', rp.amount,
+              'frequency', rp.frequency,
+              'due_day', rp.due_day
+            ))
+            FROM recurring_payments rp
+            WHERE rp.lease_id = l.id AND rp.is_active = true
+          ),
+          'balance', (
+            SELECT COALESCE(
+              (
+                SELECT SUM(amount)
+                FROM recurring_payments
+                WHERE lease_id = l.id
+                  AND is_active = true
+                  AND frequency = 'monthly'
+              ) - (
+                SELECT COALESCE(SUM(amount), 0)
+                FROM payments
+                WHERE lease_id = l.id
+                  AND payment_date >= date_trunc('month', $2::date)
+                  AND payment_date < date_trunc('month', $2::date) + interval '1 month'
+              ),
+              0
+            )
+          )
+        )) as units
       FROM 
-        leases l
-      JOIN 
-        recurring_payments rp ON l.id = rp.lease_id
-      JOIN 
-        late_fee_configurations lfc ON l.property_id = lfc.property_id
+        properties p
+      LEFT JOIN 
+        units u ON p.id = u.property_id
+      LEFT JOIN 
+        leases l ON u.id = l.unit_id AND $2 BETWEEN l.start_date AND COALESCE(l.end_date, $2 + interval '100 years')
+      LEFT JOIN 
+        tenants t ON l.tenant_id = t.id
       WHERE 
-        l.status = 'active'
-        AND rp.is_active = true
-        AND rp.payment_type = 'rent'
-        AND rp.frequency = 'monthly'
-        AND lfc.is_active = true
+        p.id = $1
+      GROUP BY 
+        p.id, p.name, p.address, p.city, p.state, p.zip_code
     `;
     
-    const params = [];
-    
-    if (propertyId) {
-      leaseQuery += ' AND l.property_id = $1';
-      params.push(propertyId);
-    }
-    
     try {
-      const leaseResult = await database.query(leaseQuery, params);
-      const leases = leaseResult.rows;
+      const result = await database.query(query, [propertyId, asOfDate]);
       
-      const calculatedLateFees = [];
-      const today = new Date(asOfDate);
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      // Process each lease
-      for (const lease of leases) {
-        // Skip if not past due day + grace period
-        const effectiveDueDay = lease.due_day + lease.grace_period_days;
-        if (currentDay <= effectiveDueDay) {
-          continue;
-        }
-        
-        // Check if rent has been paid for current month
-        const paymentQuery = `
-          SELECT COALESCE(SUM(amount), 0) as total_paid
-          FROM payments
-          WHERE 
-            lease_id = $1
-            AND EXTRACT(MONTH FROM payment_date) = $2
-            AND EXTRACT(YEAR FROM payment_date) = $3
-        `;
-        
-        const paymentResult = await database.query(paymentQuery, [
-          lease.lease_id,
-          currentMonth + 1, // SQL months are 1-12
-          currentYear
-        ]);
-        
-        const totalPaid = parseFloat(paymentResult.rows[0].total_paid);
-        const paymentAmount = parseFloat(lease.payment_amount);
-        
-        // Skip if fully paid
-        if (totalPaid >= paymentAmount) {
-          continue;
-        }
-        
-        // Check if late fee already exists for this month
-        const existingFeeQuery = `
-          SELECT id
-          FROM late_fees
-          WHERE 
-            lease_id = $1
-            AND EXTRACT(MONTH FROM created_at) = $2
-            AND EXTRACT(YEAR FROM created_at) = $3
-        `;
-        
-        const existingFeeResult = await database.query(existingFeeQuery, [
-          lease.lease_id,
-          currentMonth + 1,
-          currentYear
-        ]);
-        
-        // Skip if late fee already exists
-        if (existingFeeResult.rows.length > 0) {
-          continue;
-        }
-        
-        // Calculate late fee
-        let lateFeeAmount;
-        
-        if (lease.fee_type === 'percentage') {
-          lateFeeAmount = (paymentAmount - totalPaid) * (lease.fee_amount / 100);
-          
-          // Apply maximum fee if set
-          if (lease.maximum_fee && lateFeeAmount > lease.maximum_fee) {
-            lateFeeAmount = lease.maximum_fee;
-          }
-        } else { // fixed amount
-          lateFeeAmount = lease.fee_amount;
-        }
-        
-        // Create late fee record
-        const insertQuery = `
-          INSERT INTO late_fees (
-            lease_id,
-            recurring_payment_id,
-            amount,
-            fee_type,
-            is_paid,
-            created_at
-          )
-          VALUES ($1, $2, $3, $4, false, $5)
-          RETURNING *
-        `;
-        
-        const insertParams = [
-          lease.lease_id,
-          lease.recurring_payment_id,
-          lateFeeAmount,
-          lease.fee_type,
-          today
-        ];
-        
-        const insertResult = await database.query(insertQuery, insertParams);
-        calculatedLateFees.push(insertResult.rows[0]);
+      if (result.rows.length === 0) {
+        throw new Error(`Property with ID ${propertyId} not found`);
       }
       
-      return calculatedLateFees;
+      const rentRoll = result.rows[0];
+      
+      // Calculate summary statistics
+      const units = rentRoll.units.filter(unit => unit.unit_id !== null);
+      const occupiedUnits = units.filter(unit => unit.lease_id !== null);
+      const vacantUnits = units.filter(unit => unit.lease_id === null);
+      
+      const totalUnits = units.length;
+      const occupancyRate = totalUnits > 0 ? (occupiedUnits.length / totalUnits) * 100 : 0;
+      
+      const potentialRent = units.reduce((sum, unit) => {
+        // Use market rent for vacant units and actual rent for occupied units
+        const rentAmount = unit.lease_id ? parseFloat(unit.rent_amount) : parseFloat(unit.market_rent || 0);
+        return sum + rentAmount;
+      }, 0);
+      
+      const actualRent = occupiedUnits.reduce((sum, unit) => {
+        return sum + parseFloat(unit.rent_amount || 0);
+      }, 0);
+      
+      const totalBalance = occupiedUnits.reduce((sum, unit) => {
+        return sum + parseFloat(unit.balance || 0);
+      }, 0);
+      
+      return {
+        ...rentRoll,
+        summary: {
+          total_units: totalUnits,
+          occupied_units: occupiedUnits.length,
+          vacant_units: vacantUnits.length,
+          occupancy_rate: occupancyRate.toFixed(2) + '%',
+          potential_rent: potentialRent,
+          actual_rent: actualRent,
+          rent_loss: potentialRent - actualRent,
+          total_balance: totalBalance
+        }
+      };
     } catch (error) {
-      console.error('Error calculating late fees:', error);
-      throw new Error('Failed to calculate late fees');
+      console.error('Error generating rent roll:', error);
+      throw new Error('Failed to generate rent roll report');
     }
   }
 
   /**
-   * Generate rent roll report for a property
-   * @param {number} propertyId - The ID of the property
-   * @param {Object} options - Optional parameters
-   * @param {Date} options.asOfDate - The date to generate report as of (defaults to current da<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
+   * Check for late payments and apply late fees
+   * @param {number} propertyId - The ID of the property (optional, if not provided will check all properties)
+   * @param {Date} asOfDate - The date to check late payments as of (defaults to current date)
+   * @returns {Promise<Array>} - Array of applied late fees
+   */
+  async processLateFees(propertyId = null, asOfDate = new Date()) {
+    // Begin transaction
+    const client = await database.getClient();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // Get all active leases with recurring payments
+      let leasesQuery = `
+        SELECT 
+          l.id as lease_id,
+          l.property_id,
+          l.unit_id,
+          l.tenant_id,
+          l.rent_amount,
+          rp.id as recurring_payment_id,
+          rp.payment_type,
+          rp.amount,
+          rp.frequency,
+          r<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
